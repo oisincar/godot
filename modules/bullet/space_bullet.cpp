@@ -174,7 +174,8 @@ bool BulletPhysicsDirectSpaceState::cast_motion(const RID &p_shape, const Transf
 	btResult.m_collisionFilterGroup = 0;
 	btResult.m_collisionFilterMask = p_collision_mask;
 
-	space->dynamicsWorld->convexSweepTest(bt_convex_shape, bt_xform_from, bt_xform_to, btResult, 0.002);
+	// space->dynamicsWorld->convexSweepTest(bt_convex_shape, bt_xform_from, bt_xform_to, btResult, 0.002);
+	space->dynamicsWorld->convexSweepTest(bt_convex_shape, bt_xform_from, bt_xform_to, btResult);
 
 	if (btResult.hasHit()) {
 		p_closest_safe = p_closest_unsafe = btResult.m_closestHitFraction;
@@ -220,6 +221,48 @@ bool BulletPhysicsDirectSpaceState::collide_shape(RID p_shape, const Transform &
 
 	GodotContactPairContactResultCallback btQuery(&collision_object, r_results, p_result_max, &p_exclude);
 	btQuery.m_collisionFilterGroup = 0;
+	btQuery.m_collisionFilterMask = p_collision_mask;
+	btQuery.m_closestDistanceThreshold = 0;
+	space->dynamicsWorld->contactTest(&collision_object, btQuery);
+
+	r_result_count = btQuery.m_count;
+	bulletdelete(btConvex);
+
+	return btQuery.m_count;
+}
+
+/// Returns all the info for colliding stuff :D
+// PRetty much a duplicate of collide shape, but returning more.
+
+bool BulletPhysicsDirectSpaceState::od_collide_shape(RID p_shape, const Transform &p_shape_xform, float p_margin,
+                                                     Vector3* p_world_on_a, Vector3* p_world_on_b, float* p_distance, Vector3* p_normal_on_b,
+                                                     int p_result_max, int &r_result_count, const Set<RID> &p_exclude, uint32_t p_collision_mask) {
+	if (p_result_max <= 0)
+		return 0;
+
+	ShapeBullet *shape = space->get_physics_server()->get_shape_owner()->get(p_shape);
+
+	btCollisionShape *btShape = shape->create_bt_shape(p_shape_xform.basis.get_scale_abs(), p_margin);
+	if (!btShape->isConvex()) {
+		bulletdelete(btShape);
+		ERR_PRINTS("The shape is not a convex shape, then is not supported: shape type: " + itos(shape->get_type()));
+		return 0;
+	}
+	btConvexShape *btConvex = static_cast<btConvexShape *>(btShape);
+
+	btTransform bt_xform;
+	G_TO_B(p_shape_xform, bt_xform);
+	UNSCALE_BT_BASIS(bt_xform);
+
+	btCollisionObject collision_object;
+	collision_object.setCollisionShape(btConvex);
+	collision_object.setWorldTransform(bt_xform);
+
+    ODContactInfoResultCallback btQuery(&collision_object,
+                                        p_world_on_a, p_world_on_b, p_distance, p_normal_on_b,
+                                        p_result_max, &p_exclude);
+
+    btQuery.m_collisionFilterGroup = 0;
 	btQuery.m_collisionFilterMask = p_collision_mask;
 	btQuery.m_closestDistanceThreshold = 0;
 	space->dynamicsWorld->contactTest(&collision_object, btQuery);

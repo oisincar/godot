@@ -158,6 +158,41 @@ public:
 	virtual btScalar addSingleResult(btManifoldPoint &cp, const btCollisionObjectWrapper *colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper *colObj1Wrap, int partId1, int index1);
 };
 
+
+struct ODContactInfoResultCallback : public btCollisionWorld::ContactResultCallback {
+public:
+	const btCollisionObject *m_self_object;
+	// Vector3 *m_results;
+	int m_resultMax;
+	int m_count;
+	const Set<RID> *m_exclude;
+
+	Vector3* m_world_on_a;
+	Vector3* m_world_on_b;
+    float* m_distance;
+    Vector3* m_normal_on_b;
+
+	ODContactInfoResultCallback(btCollisionObject *p_self_object, Vector3* p_world_on_a,
+                                Vector3* p_world_on_b, float* p_distance, Vector3* p_normal_on_b,
+                                int p_resultMax, const Set<RID> *p_exclude) :
+            m_self_object(p_self_object),
+			// m_results(p_results),
+
+	        m_world_on_a(p_world_on_a),
+	        m_world_on_b(p_world_on_b),
+            m_distance(p_distance),
+            m_normal_on_b(p_normal_on_b),
+
+			m_exclude(p_exclude),
+			m_resultMax(p_resultMax),
+			m_count(0) {}
+
+	virtual bool needsCollision(btBroadphaseProxy *proxy0) const;
+
+	virtual btScalar addSingleResult(btManifoldPoint &cp, const btCollisionObjectWrapper *colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper *colObj1Wrap, int partId1, int index1);
+};
+
+
 struct GodotRestInfoContactResultCallback : public btCollisionWorld::ContactResultCallback {
 public:
 	const btCollisionObject *m_self_object;
