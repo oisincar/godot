@@ -42,6 +42,12 @@
 #include "os/os.h"
 #include "os/thread.h"
 
+
+#include "os/dir_access.h"
+#include "os/file_access.h"
+#include "os/os.h"
+#include "os/thread.h"
+
 /**
 	@author AndreaCatania
 */
@@ -272,7 +278,6 @@ btScalar GodotContactPairContactResultCallback::addSingleResult(btManifoldPoint 
 	return 1; // Not used by bullet
 }
 
-
 bool ODContactInfoResultCallback::needsCollision(btBroadphaseProxy *proxy0) const {
 	if (m_count >= m_resultMax)
 		return false;
@@ -310,7 +315,7 @@ btScalar ODContactInfoResultCallback::addSingleResult(btManifoldPoint &cp, const
 		// B_TO_G(cp.m_distance1,        m_distance[m_count]);
         m_distance[m_count] = cp.m_distance1;
         // Negating sign of normal, since it's facing other way.
-        B_TO_G(-cp.m_normalWorldOnB,   m_normal_on_b[m_count]); 
+        B_TO_G(-cp.m_normalWorldOnB,   m_normal_on_b[m_count]);
         OS::get_singleton()->print("WE'RE A");
 	}
 

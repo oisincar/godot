@@ -278,7 +278,6 @@ bool BulletPhysicsDirectSpaceState::od_collide_shape(RID p_shape, const Transfor
 }
 
 bool BulletPhysicsDirectSpaceState::rest_info(RID p_shape, const Transform &p_shape_xform, float p_margin, ShapeRestInfo *r_info, const Set<RID> &p_exclude, uint32_t p_collision_mask, bool p_collide_with_bodies, bool p_collide_with_areas) {
-
 	ShapeBullet *shape = space->get_physics_server()->get_shape_owner()->get(p_shape);
 
 	btCollisionShape *btShape = shape->create_bt_shape(p_shape_xform.basis.get_scale_abs(), p_margin);
