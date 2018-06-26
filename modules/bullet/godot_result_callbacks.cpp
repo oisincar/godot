@@ -35,6 +35,12 @@
 #include "collision_object_bullet.h"
 #include "rigid_body_bullet.h"
 
+
+#include "os/dir_access.h"
+#include "os/file_access.h"
+#include "os/os.h"
+#include "os/thread.h"
+
 /**
 	@author AndreaCatania
 */
@@ -238,7 +244,10 @@ bool GodotContactPairContactResultCallback::needsCollision(btBroadphaseProxy *pr
 	}
 }
 
+// Where collide_shape ends up... Populate array with points of contact.
 btScalar GodotContactPairContactResultCallback::addSingleResult(btManifoldPoint &cp, const btCollisionObjectWrapper *colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper *colObj1Wrap, int partId1, int index1) {
+
+    // OS::get_singleton()->print("HELLO FROM INSIDE GODOT :O.", cp.m_localPointA.m_floats[0]);
 
 	if (m_self_object == colObj0Wrap->getCollisionObject()) {
 		B_TO_G(cp.m_localPointA, m_results[m_count * 2 + 0]); // Local contact
@@ -252,6 +261,53 @@ btScalar GodotContactPairContactResultCallback::addSingleResult(btManifoldPoint 
 
 	return 1; // Not used by bullet
 }
+
+
+bool ODContactInfoResultCallback::needsCollision(btBroadphaseProxy *proxy0) const {
+	if (m_count >= m_resultMax)
+		return false;
+
+	const bool needs = GodotFilterCallback::test_collision_filters(m_collisionFilterGroup, m_collisionFilterMask, proxy0->m_collisionFilterGroup, proxy0->m_collisionFilterMask);
+	if (needs) {
+		btCollisionObject *btObj = static_cast<btCollisionObject *>(proxy0->m_clientObject);
+		CollisionObjectBullet *gObj = static_cast<CollisionObjectBullet *>(btObj->getUserPointer());
+		if (m_exclude->has(gObj->get_self())) {
+			return false;
+		}
+		return true;
+	} else {
+		return false;
+	}
+}
+
+btScalar ODContactInfoResultCallback::addSingleResult(btManifoldPoint &cp, const btCollisionObjectWrapper *colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper *colObj1Wrap, int partId1, int index1) {
+
+    OS::get_singleton()->print("HELLO FROM INSIDE OD GODOT :O.", cp.m_localPointA.m_floats[0]);
+
+	if (m_self_object == colObj0Wrap->getCollisionObject()) {
+		B_TO_G(cp.m_positionWorldOnA, m_world_on_a[m_count]);
+		B_TO_G(cp.m_positionWorldOnB, m_world_on_b[m_count]);
+		// B_TO_G(cp.m_distance1,        m_distance[m_count]);
+        m_distance[m_count] = cp.m_distance1;
+		B_TO_G(cp.m_normalWorldOnB,   m_normal_on_b[m_count]);
+
+        // Also part indicies... Or motion information...
+
+        OS::get_singleton()->print("WE'RE A");
+	} else {
+		B_TO_G(cp.m_positionWorldOnB, m_world_on_a[m_count]);
+		B_TO_G(cp.m_positionWorldOnA, m_world_on_b[m_count]);
+		// B_TO_G(cp.m_distance1,        m_distance[m_count]);
+        m_distance[m_count] = cp.m_distance1;
+		B_TO_G(cp.m_normalWorldOnB,   m_normal_on_b[m_count]); // Wrong, kinda..
+        OS::get_singleton()->print("WE'RE B");
+	}
+
+	++m_count;
+
+	return 1; // Not used by bullet
+}
+
 
 bool GodotRestInfoContactResultCallback::needsCollision(btBroadphaseProxy *proxy0) const {
 	const bool needs = GodotFilterCallback::test_collision_filters(m_collisionFilterGroup, m_collisionFilterMask, proxy0->m_collisionFilterGroup, proxy0->m_collisionFilterMask);
