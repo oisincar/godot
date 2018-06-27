@@ -253,14 +253,15 @@ btScalar ODContactInfoResultCallback::addSingleResult(btManifoldPoint &cp, const
 
         // Also part indicies... Or motion information...
 
-        OS::get_singleton()->print("WE'RE A");
+        OS::get_singleton()->print("WE'RE B");
 	} else {
 		B_TO_G(cp.m_positionWorldOnB, m_world_on_a[m_count]);
 		B_TO_G(cp.m_positionWorldOnA, m_world_on_b[m_count]);
 		// B_TO_G(cp.m_distance1,        m_distance[m_count]);
         m_distance[m_count] = cp.m_distance1;
-		B_TO_G(cp.m_normalWorldOnB,   m_normal_on_b[m_count]); // Wrong, kinda..
-        OS::get_singleton()->print("WE'RE B");
+        // Negating sign of normal, since it's facing other way.
+        B_TO_G(-cp.m_normalWorldOnB,   m_normal_on_b[m_count]); 
+        OS::get_singleton()->print("WE'RE A");
 	}
 
 	++m_count;
