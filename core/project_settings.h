@@ -137,6 +137,7 @@ public:
 	Error save_custom(const String &p_path = "", const CustomMap &p_custom = CustomMap(), const Vector<String> &p_custom_features = Vector<String>(), bool p_merge_with_current = true);
 	Error save();
 	void set_custom_property_info(const String &p_prop, const PropertyInfo &p_info);
+	const Map<StringName, PropertyInfo> &get_custom_property_info() const;
 
 	Vector<String> get_optimizer_presets() const;
 
@@ -149,6 +150,8 @@ public:
 	bool is_using_datapack() const;
 
 	void set_registering_order(bool p_enable);
+
+	bool has_custom_feature(const String &p_feature) const;
 
 	ProjectSettings();
 	~ProjectSettings();

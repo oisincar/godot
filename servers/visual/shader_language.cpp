@@ -2545,7 +2545,9 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 			TkPos pos = _get_tkpos();
 			tk = _get_token();
 
-			if (tk.type == TK_PERIOD) {
+			if (tk.type == TK_CURSOR) {
+				//do nothing
+			} else if (tk.type == TK_PERIOD) {
 
 				StringName identifier;
 				if (_get_completable_identifier(p_block, COMPLETION_INDEX, identifier)) {
@@ -3583,7 +3585,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Bui
 	return OK;
 }
 
-Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_functions, const Set<String> &p_render_modes, const Set<String> &p_shader_types) {
+Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_functions, const Vector<StringName> &p_render_modes, const Set<String> &p_shader_types) {
 
 	Token tk = _get_token();
 
@@ -3642,7 +3644,7 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
 						return ERR_PARSE_ERROR;
 					}
 
-					if (!p_render_modes.has(mode)) {
+					if (p_render_modes.find(mode) == -1) {
 						_set_error("Invalid render mode: '" + String(mode) + "'");
 						return ERR_PARSE_ERROR;
 					}
@@ -4097,7 +4099,7 @@ String ShaderLanguage::get_shader_type(const String &p_code) {
 	return String();
 }
 
-Error ShaderLanguage::compile(const String &p_code, const Map<StringName, FunctionInfo> &p_functions, const Set<String> &p_render_modes, const Set<String> &p_shader_types) {
+Error ShaderLanguage::compile(const String &p_code, const Map<StringName, FunctionInfo> &p_functions, const Vector<StringName> &p_render_modes, const Set<String> &p_shader_types) {
 
 	clear();
 
@@ -4114,7 +4116,7 @@ Error ShaderLanguage::compile(const String &p_code, const Map<StringName, Functi
 	return OK;
 }
 
-Error ShaderLanguage::complete(const String &p_code, const Map<StringName, FunctionInfo> &p_functions, const Set<String> &p_render_modes, const Set<String> &p_shader_types, List<String> *r_options, String &r_call_hint) {
+Error ShaderLanguage::complete(const String &p_code, const Map<StringName, FunctionInfo> &p_functions, const Vector<StringName> &p_render_modes, const Set<String> &p_shader_types, List<String> *r_options, String &r_call_hint) {
 
 	clear();
 
@@ -4130,13 +4132,13 @@ Error ShaderLanguage::complete(const String &p_code, const Map<StringName, Funct
 	switch (completion_type) {
 
 		case COMPLETION_NONE: {
-			//do none
-			return ERR_PARSE_ERROR;
+			//do nothing
+			return OK;
 		} break;
 		case COMPLETION_RENDER_MODE: {
-			for (const Set<String>::Element *E = p_render_modes.front(); E; E = E->next()) {
+			for (int i = 0; i < p_render_modes.size(); i++) {
 
-				r_options->push_back(E->get());
+				r_options->push_back(p_render_modes[i]);
 			}
 
 			return OK;

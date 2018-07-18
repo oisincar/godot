@@ -1,5 +1,5 @@
 /*************************************************************************/
-/*  resource_importer_webm.cpp                                           */
+/*  audio_stream_editor_plugin.h                                         */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
@@ -28,69 +28,66 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#include "resource_importer_webm.h"
+#ifndef AUDIO_STREAM_EDITOR_PLUGIN_H
+#define AUDIO_STREAM_EDITOR_PLUGIN_H
 
-#include "io/resource_saver.h"
-#include "os/file_access.h"
+#include "editor/editor_node.h"
+#include "editor/editor_plugin.h"
+#include "scene/audio/audio_player.h"
+#include "scene/gui/color_rect.h"
 #include "scene/resources/texture.h"
-#include "video_stream_webm.h"
 
-String ResourceImporterWebm::get_importer_name() const {
+class AudioStreamEditor : public ColorRect {
 
-	return "Webm";
-}
+	GDCLASS(AudioStreamEditor, ColorRect);
 
-String ResourceImporterWebm::get_visible_name() const {
+	Ref<AudioStream> stream;
+	AudioStreamPlayer *_player;
+	ColorRect *_preview;
+	Control *_indicator;
+	Label *_current_label;
+	Label *_duration_label;
 
-	return "Webm";
-}
-void ResourceImporterWebm::get_recognized_extensions(List<String> *p_extensions) const {
+	ToolButton *_play_button;
+	ToolButton *_stop_button;
 
-	p_extensions->push_back("webm");
-}
+	float _current;
+	bool _dragging;
 
-String ResourceImporterWebm::get_save_extension() const {
-	return "webmstr";
-}
+protected:
+	void _notification(int p_what);
+	void _preview_changed(ObjectID p_which);
+	void _play();
+	void _stop();
+	void _on_finished();
+	void _draw_preview();
+	void _draw_indicator();
+	void _on_input_indicator(Ref<InputEvent> p_event);
+	void _seek_to(real_t p_x);
+	void _changed_callback(Object *p_changed, const char *p_prop);
+	static void _bind_methods();
 
-String ResourceImporterWebm::get_resource_type() const {
+public:
+	void edit(Ref<AudioStream> p_stream);
+	AudioStreamEditor();
+};
 
-	return "VideoStreamWebm";
-}
+class AudioStreamEditorPlugin : public EditorPlugin {
 
-bool ResourceImporterWebm::get_option_visibility(const String &p_option, const Map<StringName, Variant> &p_options) const {
+	GDCLASS(AudioStreamEditorPlugin, EditorPlugin);
 
-	return true;
-}
+	AudioStreamEditor *audio_editor;
+	EditorNode *editor;
 
-int ResourceImporterWebm::get_preset_count() const {
-	return 0;
-}
-String ResourceImporterWebm::get_preset_name(int p_idx) const {
+public:
+	virtual String get_name() const { return "Audio"; }
+	bool has_main_screen() const { return false; }
+	virtual void edit(Object *p_object);
+	virtual bool handles(Object *p_object) const;
+	virtual void make_visible(bool p_visible);
 
-	return String();
-}
+	AudioStreamEditorPlugin(EditorNode *p_node);
+	~AudioStreamEditorPlugin();
+};
 
-void ResourceImporterWebm::get_import_options(List<ImportOption> *r_options, int p_preset) const {
-
-	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "loop"), true));
-}
-
-Error ResourceImporterWebm::import(const String &p_source_file, const String &p_save_path, const Map<StringName, Variant> &p_options, List<String> *r_platform_variants, List<String> *r_gen_files) {
-
-	FileAccess *f = FileAccess::open(p_source_file, FileAccess::READ);
-	if (!f) {
-		ERR_FAIL_COND_V(!f, ERR_CANT_OPEN);
-	}
-	memdelete(f);
-
-	VideoStreamWebm *stream = memnew(VideoStreamWebm);
-	stream->set_file(p_source_file);
-
-	Ref<VideoStreamWebm> webm_stream = Ref<VideoStreamWebm>(stream);
-
-	return ResourceSaver::save(p_save_path + ".webmstr", webm_stream);
-}
-
-ResourceImporterWebm::ResourceImporterWebm() {
-}
+#endif // AUDIO_STREAM_EDITOR_PLUGIN_H

@@ -285,7 +285,7 @@ void ItemList::unselect_all() {
 
 		items[i].selected = false;
 	}
-
+	current = -1;
 	update();
 }
 
@@ -942,6 +942,7 @@ void ItemList::_notification(int p_what) {
 				}
 			}
 
+			minimum_size_changed();
 			shape_changed = false;
 		}
 

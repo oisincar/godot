@@ -1,5 +1,5 @@
 /*************************************************************************/
-/*  resource_importer_theora.cpp                                         */
+/*  stream_peer_gdnative.h                                               */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
@@ -28,63 +28,34 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#include "resource_importer_theora.h"
+#ifndef STREAM_PEER_GDNATIVE_H
+#define STREAM_PEER_GDNATIVE_H
 
-#include "io/resource_saver.h"
-#include "os/file_access.h"
-#include "scene/resources/texture.h"
+#include "core/io/stream_peer.h"
+#include "modules/gdnative/gdnative.h"
+#include "modules/gdnative/include/net/godot_net.h"
 
-String ResourceImporterTheora::get_importer_name() const {
+class StreamPeerGDNative : public StreamPeer {
 
-	return "Theora";
-}
+	GDCLASS(StreamPeerGDNative, StreamPeer);
 
-String ResourceImporterTheora::get_visible_name() const {
+protected:
+	static void _bind_methods();
+	godot_net_stream_peer *interface;
 
-	return "Theora";
-}
-void ResourceImporterTheora::get_recognized_extensions(List<String> *p_extensions) const {
+public:
+	StreamPeerGDNative();
+	~StreamPeerGDNative();
 
-	p_extensions->push_back("ogv");
-	p_extensions->push_back("ogm");
-}
+	/* Sets the interface implementation from GDNative */
+	void set_native_stream_peer(godot_net_stream_peer *p_interface);
 
-String ResourceImporterTheora::get_save_extension() const {
-	return "ogvstr";
-}
+	/* Specific to StreamPeer */
+	Error put_data(const uint8_t *p_data, int p_bytes);
+	Error put_partial_data(const uint8_t *p_data, int p_bytes, int &r_sent);
+	Error get_data(uint8_t *p_buffer, int p_bytes);
+	Error get_partial_data(uint8_t *p_buffer, int p_bytes, int &r_received);
+	int get_available_bytes() const;
+};
 
-String ResourceImporterTheora::get_resource_type() const {
-
-	return "VideoStreamTheora";
-}
-
-bool ResourceImporterTheora::get_option_visibility(const String &p_option, const Map<StringName, Variant> &p_options) const {
-
-	return true;
-}
-
-int ResourceImporterTheora::get_preset_count() const {
-	return 0;
-}
-String ResourceImporterTheora::get_preset_name(int p_idx) const {
-
-	return String();
-}
-
-void ResourceImporterTheora::get_import_options(List<ImportOption> *r_options, int p_preset) const {
-
-	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "loop"), true));
-}
-
-Error ResourceImporterTheora::import(const String &p_source_file, const String &p_save_path, const Map<StringName, Variant> &p_options, List<String> *r_platform_variants, List<String> *r_gen_files) {
-
-	VideoStreamTheora *stream = memnew(VideoStreamTheora);
-	stream->set_file(p_source_file);
-
-	Ref<VideoStreamTheora> ogv_stream = Ref<VideoStreamTheora>(stream);
-
-	return ResourceSaver::save(p_save_path + ".ogvstr", ogv_stream);
-}
-
-ResourceImporterTheora::ResourceImporterTheora() {
-}
+#endif // STREAM_PEER_GDNATIVE_H

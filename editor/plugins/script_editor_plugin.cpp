@@ -1872,6 +1872,7 @@ void ScriptEditor::save_all_scripts() {
 	}
 
 	_update_script_names();
+	EditorFileSystem::get_singleton()->update_script_classes();
 }
 
 void ScriptEditor::apply_scripts() const {
@@ -2884,7 +2885,7 @@ ScriptEditor::ScriptEditor(EditorNode *p_editor) {
 
 	error_dialog = memnew(AcceptDialog);
 	add_child(error_dialog);
-	error_dialog->get_ok()->set_text(TTR("I see.."));
+	error_dialog->get_ok()->set_text(TTR("I see..."));
 
 	debugger = memnew(ScriptEditorDebugger(editor));
 	debugger->connect("goto_script_line", this, "_goto_script_line");

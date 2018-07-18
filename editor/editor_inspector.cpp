@@ -92,7 +92,7 @@ void EditorProperty::_notification(int p_what) {
 		Rect2 bottom_rect;
 
 		{
-			int child_room = size.width / 2;
+			int child_room = size.width * (1.0 - split_ratio);
 			Ref<Font> font = get_font("font", "Tree");
 			int height = font->get_height();
 
@@ -691,6 +691,15 @@ bool EditorProperty::is_selectable() const {
 	return selectable;
 }
 
+void EditorProperty::set_name_split_ratio(float p_ratio) {
+	split_ratio = p_ratio;
+}
+
+float EditorProperty::get_name_split_ratio() const {
+
+	return split_ratio;
+}
+
 void EditorProperty::set_object_and_property(Object *p_object, const StringName &p_property) {
 	object = p_object;
 	property = p_property;
@@ -744,6 +753,7 @@ void EditorProperty::_bind_methods() {
 
 EditorProperty::EditorProperty() {
 
+	split_ratio = 0.5;
 	selectable = true;
 	text_size = 0;
 	read_only = false;
@@ -1039,8 +1049,6 @@ void EditorInspectorSection::setup(const String &p_section, const String &p_labe
 			vbox->hide();
 		}
 	}
-		//	void editor_set_section_unfold(const String &p_section, bool p_unfolded);
-
 #endif
 }
 
@@ -1113,6 +1121,30 @@ EditorInspectorSection::EditorInspectorSection() {
 
 Ref<EditorInspectorPlugin> EditorInspector::inspector_plugins[MAX_PLUGINS];
 int EditorInspector::inspector_plugin_count = 0;
+
+EditorProperty *EditorInspector::instantiate_property_editor(Object *p_object, Variant::Type p_type, const String &p_path, PropertyHint p_hint, const String &p_hint_text, int p_usage) {
+
+	for (int i = inspector_plugin_count - 1; i >= 0; i--) {
+
+		inspector_plugins[i]->parse_property(p_object, p_type, p_path, p_hint, p_hint_text, p_usage);
+		if (inspector_plugins[i]->added_editors.size()) {
+			for (int j = 1; j < inspector_plugins[i]->added_editors.size(); j++) { //only keep first one
+				memdelete(inspector_plugins[i]->added_editors[j].property_editor);
+			}
+
+			EditorProperty *prop = Object::cast_to<EditorProperty>(inspector_plugins[i]->added_editors[0].property_editor);
+			if (prop) {
+
+				inspector_plugins[i]->added_editors.clear();
+				return prop;
+			} else {
+				memdelete(inspector_plugins[i]->added_editors[0].property_editor);
+				inspector_plugins[i]->added_editors.clear();
+			}
+		}
+	}
+	return NULL;
+}
 
 void EditorInspector::add_inspector_plugin(const Ref<EditorInspectorPlugin> &p_plugin) {
 
@@ -1464,7 +1496,8 @@ void EditorInspector::update_tree() {
 #endif
 		for (List<Ref<EditorInspectorPlugin> >::Element *E = valid_plugins.front(); E; E = E->next()) {
 			Ref<EditorInspectorPlugin> ped = E->get();
-			ped->parse_property(object, p.type, p.name, p.hint, p.hint_string, p.usage);
+			bool exclusive = ped->parse_property(object, p.type, p.name, p.hint, p.hint_string, p.usage);
+
 			List<EditorInspectorPlugin::AddedEditor> editors = ped->added_editors; //make a copy, since plugins may be used again in a sub-inspector
 			ped->added_editors.clear();
 
@@ -1532,6 +1565,10 @@ void EditorInspector::update_tree() {
 					}
 				}
 			}
+
+			if (exclusive) {
+				break;
+			}
 		}
 	}
 
@@ -1567,7 +1604,7 @@ void EditorInspector::_clear() {
 
 void EditorInspector::refresh() {
 
-	if (refresh_countdown > 0)
+	if (refresh_countdown > 0 || changing)
 		return;
 	refresh_countdown = EditorSettings::get_singleton()->get("docks/property_editor/auto_refresh_interval");
 }
@@ -1768,9 +1805,7 @@ void EditorInspector::_edit_set(const String &p_name, const Variant &p_value, bo
 		}
 		undo_redo->add_do_method(this, "emit_signal", _prop_edited, p_name);
 		undo_redo->add_undo_method(this, "emit_signal", _prop_edited, p_name);
-		changing++;
 		undo_redo->commit_action();
-		changing--;
 	}
 
 	if (editor_property_map.has(p_name)) {
@@ -1780,9 +1815,17 @@ void EditorInspector::_edit_set(const String &p_name, const Variant &p_value, bo
 	}
 }
 
-void EditorInspector::_property_changed(const String &p_path, const Variant &p_value) {
+void EditorInspector::_property_changed(const String &p_path, const Variant &p_value, bool changing) {
+
+	// The "changing" variable must be true for properties that trigger events as typing occurs,
+	// like "text_changed" signal. eg: Text property of Label, Button, RichTextLabel, etc.
+	if (changing)
+		this->changing++;
 
 	_edit_set(p_path, p_value, false, "");
+
+	if (changing)
+		this->changing--;
 }
 
 void EditorInspector::_property_changed_update_all(const String &p_path, const Variant &p_value) {
@@ -1956,8 +1999,8 @@ void EditorInspector::_changed_callback(Object *p_changed, const char *p_prop) {
 
 void EditorInspector::_bind_methods() {
 
+	ClassDB::bind_method("_property_changed", &EditorInspector::_property_changed, DEFVAL(false));
 	ClassDB::bind_method("_multiple_properties_changed", &EditorInspector::_multiple_properties_changed);
-	ClassDB::bind_method("_property_changed", &EditorInspector::_property_changed);
 	ClassDB::bind_method("_property_changed_update_all", &EditorInspector::_property_changed_update_all);
 
 	ClassDB::bind_method("_edit_request_change", &EditorInspector::_edit_request_change);
@@ -1969,6 +2012,7 @@ void EditorInspector::_bind_methods() {
 	ClassDB::bind_method("_property_selected", &EditorInspector::_property_selected);
 	ClassDB::bind_method("_resource_selected", &EditorInspector::_resource_selected);
 	ClassDB::bind_method("_object_id_selected", &EditorInspector::_object_id_selected);
+	ClassDB::bind_method("refresh", &EditorInspector::refresh);
 
 	ADD_SIGNAL(MethodInfo("property_keyed", PropertyInfo(Variant::STRING, "property")));
 	ADD_SIGNAL(MethodInfo("resource_selected", PropertyInfo(Variant::OBJECT, "res"), PropertyInfo(Variant::STRING, "prop")));

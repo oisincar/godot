@@ -145,11 +145,17 @@ void ShaderMaterial::_get_property_list(List<PropertyInfo> *p_list) const {
 
 void ShaderMaterial::set_shader(const Ref<Shader> &p_shader) {
 
+	if (shader.is_valid()) {
+		shader->disconnect("changed", this, "_shader_changed");
+	}
+
 	shader = p_shader;
 
 	RID rid;
-	if (shader.is_valid())
+	if (shader.is_valid()) {
 		rid = shader->get_rid();
+		shader->connect("changed", this, "_shader_changed");
+	}
 
 	VS::get_singleton()->material_set_shader(_get_material(), rid);
 	_change_notify(); //properties for shader exposed
@@ -171,12 +177,17 @@ Variant ShaderMaterial::get_shader_param(const StringName &p_param) const {
 	return VS::get_singleton()->material_get_param(_get_material(), p_param);
 }
 
+void ShaderMaterial::_shader_changed() {
+	_change_notify(); //update all properties
+}
+
 void ShaderMaterial::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_shader", "shader"), &ShaderMaterial::set_shader);
 	ClassDB::bind_method(D_METHOD("get_shader"), &ShaderMaterial::get_shader);
 	ClassDB::bind_method(D_METHOD("set_shader_param", "param", "value"), &ShaderMaterial::set_shader_param);
 	ClassDB::bind_method(D_METHOD("get_shader_param", "param"), &ShaderMaterial::get_shader_param);
+	ClassDB::bind_method(D_METHOD("_shader_changed"), &ShaderMaterial::_shader_changed);
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "shader", PROPERTY_HINT_RESOURCE_TYPE, "Shader"), "set_shader", "get_shader");
 }
@@ -392,6 +403,12 @@ void SpatialMaterial::_update_shader() {
 	}
 	if (flags[FLAG_DONT_RECEIVE_SHADOWS]) {
 		code += ",shadows_disabled";
+	}
+	if (flags[FLAG_DISABLE_AMBIENT_LIGHT]) {
+		code += ",ambient_light_disabled";
+	}
+	if (flags[FLAG_ENSURE_CORRECT_NORMALS]) {
+		code += ",ensure_correct_normals";
 	}
 	code += ";\n";
 
@@ -1852,6 +1869,8 @@ void SpatialMaterial::_bind_methods() {
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_fixed_size"), "set_flag", "get_flag", FLAG_FIXED_SIZE);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_albedo_tex_force_srgb"), "set_flag", "get_flag", FLAG_ALBEDO_TEXTURE_FORCE_SRGB);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_do_not_receive_shadows"), "set_flag", "get_flag", FLAG_DONT_RECEIVE_SHADOWS);
+	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_disable_ambient_light"), "set_flag", "get_flag", FLAG_DISABLE_AMBIENT_LIGHT);
+	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_ensure_correct_normals"), "set_flag", "get_flag", FLAG_ENSURE_CORRECT_NORMALS);
 	ADD_GROUP("Vertex Color", "vertex_color");
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "vertex_color_use_as_albedo"), "set_flag", "get_flag", FLAG_ALBEDO_FROM_VERTEX_COLOR);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "vertex_color_is_srgb"), "set_flag", "get_flag", FLAG_SRGB_VERTEX_COLOR);
@@ -2042,6 +2061,8 @@ void SpatialMaterial::_bind_methods() {
 	BIND_ENUM_CONSTANT(FLAG_TRIPLANAR_USE_WORLD);
 	BIND_ENUM_CONSTANT(FLAG_ALBEDO_TEXTURE_FORCE_SRGB);
 	BIND_ENUM_CONSTANT(FLAG_DONT_RECEIVE_SHADOWS);
+	BIND_ENUM_CONSTANT(FLAG_DISABLE_AMBIENT_LIGHT);
+	BIND_ENUM_CONSTANT(FLAG_ENSURE_CORRECT_NORMALS);
 	BIND_ENUM_CONSTANT(FLAG_MAX);
 
 	BIND_ENUM_CONSTANT(DIFFUSE_BURLEY);

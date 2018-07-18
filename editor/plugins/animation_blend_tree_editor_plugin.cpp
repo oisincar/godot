@@ -246,7 +246,7 @@ void AnimationNodeBlendTreeEditor::_add_node(int p_idx) {
 
 	Point2 instance_pos = graph->get_scroll_ofs() + graph->get_size() * 0.5;
 
-	anode->set_position(instance_pos);
+	anode->set_position(instance_pos / EDSCALE);
 
 	String base_name = add_options[p_idx].name;
 	int base = 1;
@@ -767,7 +767,8 @@ AnimationNodeBlendTreeEditor::AnimationNodeBlendTreeEditor() {
 
 	add_options.push_back(AddOption("Animation", "AnimationNodeAnimation"));
 	add_options.push_back(AddOption("OneShot", "AnimationNodeOneShot"));
-	add_options.push_back(AddOption("Add", "AnimationNodeAdd"));
+	add_options.push_back(AddOption("Add2", "AnimationNodeAdd2"));
+	add_options.push_back(AddOption("Add3", "AnimationNodeAdd3"));
 	add_options.push_back(AddOption("Blend2", "AnimationNodeBlend2"));
 	add_options.push_back(AddOption("Blend3", "AnimationNodeBlend3"));
 	add_options.push_back(AddOption("Seek", "AnimationNodeTimeSeek"));
