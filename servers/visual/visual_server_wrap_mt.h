@@ -55,7 +55,7 @@ class VisualServerWrapMT : public VisualServer {
 	bool create_thread;
 
 	uint64_t draw_pending;
-	void thread_draw();
+	void thread_draw(bool p_swap_buffers, double frame_step);
 	void thread_flush();
 
 	void thread_exit();
@@ -82,17 +82,19 @@ public:
 
 	/* EVENT QUEUING */
 	FUNCRID(texture)
-	FUNC5(texture_allocate, RID, int, int, Image::Format, uint32_t)
-	FUNC3(texture_set_data, RID, const Ref<Image> &, CubeMapSide)
-	FUNC10(texture_set_data_partial, RID, const Ref<Image> &, int, int, int, int, int, int, int, CubeMapSide)
-	FUNC2RC(Ref<Image>, texture_get_data, RID, CubeMapSide)
+	FUNC7(texture_allocate, RID, int, int, int, Image::Format, TextureType, uint32_t)
+	FUNC3(texture_set_data, RID, const Ref<Image> &, int)
+	FUNC10(texture_set_data_partial, RID, const Ref<Image> &, int, int, int, int, int, int, int, int)
+	FUNC2RC(Ref<Image>, texture_get_data, RID, int)
 	FUNC2(texture_set_flags, RID, uint32_t)
 	FUNC1RC(uint32_t, texture_get_flags, RID)
 	FUNC1RC(Image::Format, texture_get_format, RID)
+	FUNC1RC(TextureType, texture_get_type, RID)
 	FUNC1RC(uint32_t, texture_get_texid, RID)
 	FUNC1RC(uint32_t, texture_get_width, RID)
 	FUNC1RC(uint32_t, texture_get_height, RID)
-	FUNC3(texture_set_size_override, RID, int, int)
+	FUNC1RC(uint32_t, texture_get_depth, RID)
+	FUNC4(texture_set_size_override, RID, int, int, int)
 
 	FUNC3(texture_set_detect_3d_callback, RID, TextureDetectCallback, void *)
 	FUNC3(texture_set_detect_srgb_callback, RID, TextureDetectCallback, void *)
@@ -578,7 +580,7 @@ public:
 
 	virtual void init();
 	virtual void finish();
-	virtual void draw(bool p_swap_buffers);
+	virtual void draw(bool p_swap_buffers, double frame_step);
 	virtual void sync();
 	FUNC0RC(bool, has_changed)
 

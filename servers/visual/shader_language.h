@@ -72,6 +72,12 @@ public:
 		TK_TYPE_SAMPLER2D,
 		TK_TYPE_ISAMPLER2D,
 		TK_TYPE_USAMPLER2D,
+		TK_TYPE_SAMPLER2DARRAY,
+		TK_TYPE_ISAMPLER2DARRAY,
+		TK_TYPE_USAMPLER2DARRAY,
+		TK_TYPE_SAMPLER3D,
+		TK_TYPE_ISAMPLER3D,
+		TK_TYPE_USAMPLER3D,
 		TK_TYPE_SAMPLERCUBE,
 		TK_INTERPOLATION_FLAT,
 		TK_INTERPOLATION_NO_PERSPECTIVE,
@@ -186,6 +192,12 @@ public:
 		TYPE_SAMPLER2D,
 		TYPE_ISAMPLER2D,
 		TYPE_USAMPLER2D,
+		TYPE_SAMPLER2DARRAY,
+		TYPE_ISAMPLER2DARRAY,
+		TYPE_USAMPLER2DARRAY,
+		TYPE_SAMPLER3D,
+		TYPE_ISAMPLER3D,
+		TYPE_USAMPLER3D,
 		TYPE_SAMPLERCUBE,
 	};
 
@@ -617,7 +629,7 @@ private:
 	bool _find_identifier(const BlockNode *p_block, const Map<StringName, BuiltInInfo> &p_builtin_types, const StringName &p_identifier, DataType *r_data_type = NULL, IdentifierType *r_type = NULL);
 
 	bool _is_operator_assign(Operator p_op) const;
-	bool _validate_assign(Node *p_node, const Map<StringName, BuiltInInfo> &p_builtin_types);
+	bool _validate_assign(Node *p_node, const Map<StringName, BuiltInInfo> &p_builtin_types, String *r_message = NULL);
 
 	bool _validate_operator(OperatorNode *p_op, DataType *r_ret_type = NULL);
 

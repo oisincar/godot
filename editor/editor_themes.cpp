@@ -237,8 +237,6 @@ void editor_register_and_generate_icons(Ref<Theme> p_theme, bool p_dark_theme = 
 	ImageLoaderSVG::set_convert_colors(NULL);
 
 	clock_t end_time = clock();
-
-	double time_d = (double)(end_time - begin_time) / CLOCKS_PER_SEC;
 #else
 	print_line("Sorry no icons for you");
 #endif
@@ -257,7 +255,6 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 
 	String preset = EDITOR_DEF("interface/theme/preset", "Default");
 
-	int icon_font_color_setting = EDITOR_DEF("interface/theme/icon_and_font_color", 0);
 	bool highlight_tabs = EDITOR_DEF("interface/theme/highlight_tabs", false);
 	int border_size = EDITOR_DEF("interface/theme/border_size", 1);
 
@@ -370,6 +367,8 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	Color success_color = accent_color.linear_interpolate(Color(0.2, 1, 0.2), 0.6) * 1.2;
 	Color warning_color = accent_color.linear_interpolate(Color(1, 1, 0), 0.7) * 1.2;
 	Color error_color = accent_color.linear_interpolate(Color(1, 0, 0), 0.8) * 1.7;
+	Color property_color = font_color.linear_interpolate(Color(0.5, 0.5, 0.5), 0.5);
+
 	if (!dark_theme) {
 		// yellow on white themes is a P.I.T.A.
 		warning_color = accent_color.linear_interpolate(Color(1, 0.8, 0), 0.9);
@@ -380,6 +379,7 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	theme->set_color("success_color", "Editor", success_color);
 	theme->set_color("warning_color", "Editor", warning_color);
 	theme->set_color("error_color", "Editor", error_color);
+	theme->set_color("property_color", "Editor", property_color);
 
 	// 2d grid color
 	const Color grid_minor_color = mono_color * Color(1.0, 1.0, 1.0, 0.07);
@@ -656,6 +656,14 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	theme->set_icon("visibility_xray", "PopupMenu", theme->get_icon("GuiVisibilityXray", "EditorIcons"));
 	theme->set_constant("vseparation", "PopupMenu", (extra_spacing + default_margin_size) * EDSCALE);
 
+	Ref<StyleBoxFlat> sub_inspector_bg = make_flat_stylebox(dark_color_1, 2, 0, 0, 0);
+	sub_inspector_bg->set_border_width(MARGIN_LEFT, 2);
+	sub_inspector_bg->set_border_color(MARGIN_LEFT, accent_color * Color(1, 1, 1, 0.3));
+	sub_inspector_bg->set_draw_center(true);
+
+	theme->set_stylebox("sub_inspector_bg", "Editor", sub_inspector_bg);
+	theme->set_constant("inspector_margin", "Editor", 8 * EDSCALE);
+
 	// Tree & ItemList background
 	Ref<StyleBoxFlat> style_tree_bg = style_default->duplicate();
 	style_tree_bg->set_bg_color(dark_color_1);
@@ -666,6 +674,7 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	// Tree
 	theme->set_icon("checked", "Tree", theme->get_icon("GuiChecked", "EditorIcons"));
 	theme->set_icon("unchecked", "Tree", theme->get_icon("GuiUnchecked", "EditorIcons"));
+	theme->set_icon("arrow_up", "Tree", theme->get_icon("GuiTreeArrowUp", "EditorIcons"));
 	theme->set_icon("arrow", "Tree", theme->get_icon("GuiTreeArrowDown", "EditorIcons"));
 	theme->set_icon("arrow_collapsed", "Tree", theme->get_icon("GuiTreeArrowRight", "EditorIcons"));
 	theme->set_icon("updown", "Tree", theme->get_icon("GuiTreeUpdown", "EditorIcons"));
@@ -1080,6 +1089,7 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	const Color completion_font_color = font_color;
 	const Color text_color = font_color;
 	const Color line_number_color = dim_color;
+	const Color safe_line_number_color = dim_color * Color(1, 1.2, 1, 1.5);
 	const Color caret_color = mono_color;
 	const Color caret_background_color = mono_color.inverted();
 	const Color text_selected_color = dark_color_3;
@@ -1114,6 +1124,7 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 		setting->set_initial_value("text_editor/highlighting/completion_font_color", completion_font_color, true);
 		setting->set_initial_value("text_editor/highlighting/text_color", text_color, true);
 		setting->set_initial_value("text_editor/highlighting/line_number_color", line_number_color, true);
+		setting->set_initial_value("text_editor/highlighting/safe_line_number_color", safe_line_number_color, true);
 		setting->set_initial_value("text_editor/highlighting/caret_color", caret_color, true);
 		setting->set_initial_value("text_editor/highlighting/caret_background_color", caret_background_color, true);
 		setting->set_initial_value("text_editor/highlighting/text_selected_color", text_selected_color, true);

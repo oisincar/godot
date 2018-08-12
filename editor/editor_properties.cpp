@@ -178,6 +178,8 @@ void EditorPropertyTextEnum::_bind_methods() {
 EditorPropertyTextEnum::EditorPropertyTextEnum() {
 	options = memnew(OptionButton);
 	options->set_clip_text(true);
+	options->set_flat(true);
+
 	add_child(options);
 	add_focusable(options);
 	options->connect("item_selected", this, "_option_selected");
@@ -254,6 +256,51 @@ EditorPropertyPath::EditorPropertyPath() {
 	path->connect("pressed", this, "_path_pressed");
 	folder = false;
 	global = false;
+}
+
+///////////////////// CLASS NAME /////////////////////////
+
+void EditorPropertyClassName::setup(const String &p_base_type, const String &p_selected_type) {
+
+	base_type = p_base_type;
+	dialog->set_base_type(base_type);
+	selected_type = p_selected_type;
+	property->set_text(selected_type);
+}
+
+void EditorPropertyClassName::update_property() {
+
+	String s = get_edited_object()->get(get_edited_property());
+	property->set_text(s);
+	selected_type = s;
+}
+
+void EditorPropertyClassName::_property_selected() {
+	dialog->popup_create(true);
+}
+
+void EditorPropertyClassName::_dialog_created() {
+	selected_type = dialog->get_selected_type();
+	emit_signal("property_changed", get_edited_property(), selected_type);
+	update_property();
+}
+
+void EditorPropertyClassName::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("_dialog_created"), &EditorPropertyClassName::_dialog_created);
+	ClassDB::bind_method(D_METHOD("_property_selected"), &EditorPropertyClassName::_property_selected);
+}
+
+EditorPropertyClassName::EditorPropertyClassName() {
+	property = memnew(Button);
+	property->set_clip_text(true);
+	add_child(property);
+	add_focusable(property);
+	property->set_text(selected_type);
+	property->connect("pressed", this, "_property_selected");
+	dialog = memnew(CreateDialog);
+	dialog->set_base_type(base_type);
+	dialog->connect("create", this, "_dialog_created");
+	add_child(dialog);
 }
 
 ///////////////////// MEMBER /////////////////////////
@@ -390,13 +437,37 @@ EditorPropertyCheck::EditorPropertyCheck() {
 
 void EditorPropertyEnum::_option_selected(int p_which) {
 
-	emit_signal("property_changed", get_edited_property(), p_which);
+	String text = options->get_item_text(p_which);
+	Vector<String> text_split = text.split(":");
+	if (text_split.size() == 1) {
+		emit_signal("property_changed", get_edited_property(), p_which);
+		return;
+	}
+	String name = text_split[1];
+	emit_signal("property_changed", get_edited_property(), name.to_int());
 }
 
 void EditorPropertyEnum::update_property() {
 
 	int which = get_edited_object()->get(get_edited_property());
-	options->select(which);
+	if (which == 0) {
+		options->select(which);
+		return;
+	}
+
+	for (int i = 0; i < options->get_item_count(); i++) {
+		String text = options->get_item_text(i);
+		Vector<String> text_split = text.split(":");
+		if (text_split.size() == 1) {
+			options->select(which);
+			return;
+		}
+		String name = text_split[1];
+		if (itos(which) == name) {
+			options->select(i);
+			return;
+		}
+	}
 }
 
 void EditorPropertyEnum::setup(const Vector<String> &p_options) {
@@ -417,6 +488,7 @@ void EditorPropertyEnum::_bind_methods() {
 EditorPropertyEnum::EditorPropertyEnum() {
 	options = memnew(OptionButton);
 	options->set_clip_text(true);
+	options->set_flat(true);
 	add_child(options);
 	add_focusable(options);
 	options->connect("item_selected", this, "_option_selected");
@@ -496,6 +568,7 @@ public:
 	uint32_t value;
 	Vector<Rect2> flag_rects;
 	Vector<String> names;
+	Vector<String> tooltips;
 
 	virtual Size2 get_minimum_size() const {
 		Ref<Font> font = get_font("font", "Label");
@@ -504,8 +577,8 @@ public:
 
 	virtual String get_tooltip(const Point2 &p_pos) const {
 		for (int i = 0; i < flag_rects.size(); i++) {
-			if (i < names.size() && flag_rects[i].has_point(p_pos)) {
-				return names[i];
+			if (i < tooltips.size() && flag_rects[i].has_point(p_pos)) {
+				return tooltips[i];
 			}
 		}
 		return String();
@@ -609,6 +682,7 @@ void EditorPropertyLayers::setup(LayerType p_layer_type) {
 	}
 
 	Vector<String> names;
+	Vector<String> tooltips;
 	for (int i = 0; i < 20; i++) {
 		String name;
 
@@ -620,12 +694,12 @@ void EditorPropertyLayers::setup(LayerType p_layer_type) {
 			name = TTR("Layer") + " " + itos(i + 1);
 		}
 
-		name += "\n" + vformat(TTR("Bit %d, value %d"), i, 1 << i);
-
 		names.push_back(name);
+		tooltips.push_back(name + "\n" + vformat(TTR("Bit %d, value %d"), i, 1 << i));
 	}
 
 	grid->names = names;
+	grid->tooltips = tooltips;
 }
 
 void EditorPropertyLayers::_button_pressed() {
@@ -654,6 +728,7 @@ void EditorPropertyLayers::_menu_pressed(int p_menu) {
 		grid->value |= (1 << p_menu);
 	}
 	grid->update();
+	layers->set_item_checked(layers->get_item_index(p_menu), grid->value & (1 << p_menu));
 	_grid_changed(grid->value);
 }
 
@@ -679,6 +754,7 @@ EditorPropertyLayers::EditorPropertyLayers() {
 	set_bottom_editor(hb);
 	layers = memnew(PopupMenu);
 	add_child(layers);
+	layers->set_hide_on_checkable_item_selection(false);
 	layers->connect("id_pressed", this, "_menu_pressed");
 }
 ///////////////////// INT /////////////////////////
@@ -711,6 +787,7 @@ void EditorPropertyInteger::setup(int p_min, int p_max, bool p_allow_greater, bo
 
 EditorPropertyInteger::EditorPropertyInteger() {
 	spin = memnew(EditorSpinSlider);
+	spin->set_flat(true);
 	add_child(spin);
 	add_focusable(spin);
 	spin->connect("value_changed", this, "_value_changed");
@@ -797,6 +874,7 @@ void EditorPropertyFloat::setup(double p_min, double p_max, double p_step, bool 
 
 EditorPropertyFloat::EditorPropertyFloat() {
 	spin = memnew(EditorSpinSlider);
+	spin->set_flat(true);
 	add_child(spin);
 	add_focusable(spin);
 	spin->connect("value_changed", this, "_value_changed");
@@ -806,6 +884,12 @@ EditorPropertyFloat::EditorPropertyFloat() {
 ///////////////////// EASING /////////////////////////
 
 void EditorPropertyEasing::_drag_easing(const Ref<InputEvent> &p_ev) {
+
+	Ref<InputEventMouseButton> mb = p_ev;
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == BUTTON_RIGHT) {
+		preset->set_global_position(easing_draw->get_global_transform().xform(mb->get_position()));
+		preset->popup();
+	}
 
 	Ref<InputEventMouseMotion> mm = p_ev;
 
@@ -844,7 +928,7 @@ void EditorPropertyEasing::_draw_easing() {
 	Size2 s = easing_draw->get_size();
 	Rect2 r(Point2(), s);
 	r = r.grow(3);
-	get_stylebox("normal", "LineEdit")->draw(ci, r);
+	//get_stylebox("normal", "LineEdit")->draw(ci, r);
 
 	int points = 48;
 
@@ -854,6 +938,7 @@ void EditorPropertyEasing::_draw_easing() {
 	Ref<Font> f = get_font("font", "Label");
 	Color color = get_color("font_color", "Label");
 
+	Vector<Point2> lines;
 	for (int i = 1; i <= points; i++) {
 
 		float ifl = i / float(points);
@@ -866,10 +951,12 @@ void EditorPropertyEasing::_draw_easing() {
 			iflp = 1.0 - iflp;
 		}
 
-		VisualServer::get_singleton()->canvas_item_add_line(ci, Point2(iflp * s.width, prev * s.height), Point2(ifl * s.width, h * s.height), color);
+		lines.push_back(Point2(ifl * s.width, h * s.height));
+		lines.push_back(Point2(iflp * s.width, prev * s.height));
 		prev = h;
 	}
 
+	easing_draw->draw_multiline(lines, color, 1.0, true);
 	f->draw(ci, Point2(10, 10 + f->get_ascent()), String::num(exp, 2), color);
 }
 
@@ -877,29 +964,17 @@ void EditorPropertyEasing::update_property() {
 	easing_draw->update();
 }
 
-void EditorPropertyEasing::_set_preset(float p_val) {
-	emit_signal("property_changed", get_edited_property(), p_val);
+void EditorPropertyEasing::_set_preset(int p_preset) {
+	static const float preset_value[EASING_MAX] = { 0.0, 1.0, 2.0, 0.5, -2.0, -0.5 };
+
+	emit_signal("property_changed", get_edited_property(), preset_value[p_preset]);
 	easing_draw->update();
 }
 
 void EditorPropertyEasing::setup(bool p_full, bool p_flip) {
 
 	flip = p_flip;
-	if (p_full) {
-		HBoxContainer *hb2 = memnew(HBoxContainer);
-		vb->add_child(hb2);
-		button_out_in = memnew(ToolButton);
-		button_out_in->set_tooltip(TTR("Out-In"));
-		button_out_in->set_h_size_flags(SIZE_EXPAND_FILL);
-		button_out_in->connect("pressed", this, "_set_preset", varray(-0.5));
-		hb2->add_child(button_out_in);
-
-		button_in_out = memnew(ToolButton);
-		button_in_out->set_tooltip(TTR("In"));
-		button_in_out->set_h_size_flags(SIZE_EXPAND_FILL);
-		button_in_out->connect("pressed", this, "_set_preset", varray(-2));
-		hb2->add_child(button_in_out);
-	}
+	full = p_full;
 }
 
 void EditorPropertyEasing::_notification(int p_what) {
@@ -907,15 +982,19 @@ void EditorPropertyEasing::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED:
 		case NOTIFICATION_ENTER_TREE: {
+			preset->clear();
+			preset->add_icon_item(get_icon("CurveConstant", "EditorIcons"), "Zero", EASING_ZERO);
+			preset->add_icon_item(get_icon("CurveLinear", "EditorIcons"), "Linear", EASING_LINEAR);
+			preset->add_icon_item(get_icon("CurveIn", "EditorIcons"), "In", EASING_IN);
+			preset->add_icon_item(get_icon("CurveOut", "EditorIcons"), "Out", EASING_OUT);
+			if (full) {
+				preset->add_icon_item(get_icon("CurveInOut", "EditorIcons"), "In-Out", EASING_IN_OUT);
+				preset->add_icon_item(get_icon("CurveOutIn", "EditorIcons"), "Out-In", EASING_OUT_IN);
+			}
 			easing_draw->set_custom_minimum_size(Size2(0, get_font("font", "Label")->get_height() * 2));
-			button_linear->set_icon(get_icon("CurveLinear", "EditorIcons"));
-			button_out->set_icon(get_icon("CurveOut", "EditorIcons"));
-			button_in->set_icon(get_icon("CurveIn", "EditorIcons"));
-			button_constant->set_icon(get_icon("CurveConstant", "EditorIcons"));
-			if (button_out_in)
-				button_out_in->set_icon(get_icon("CurveOutIn", "EditorIcons"));
-			if (button_in_out)
-				button_in_out->set_icon(get_icon("CurveInOut", "EditorIcons"));
+		} break;
+		case NOTIFICATION_RESIZED: {
+
 		} break;
 	}
 }
@@ -929,47 +1008,18 @@ void EditorPropertyEasing::_bind_methods() {
 
 EditorPropertyEasing::EditorPropertyEasing() {
 
-	vb = memnew(VBoxContainer);
-	add_child(vb);
-	HBoxContainer *hb = memnew(HBoxContainer);
-	set_label_reference(hb);
-
-	vb->add_child(hb);
-
-	button_linear = memnew(ToolButton);
-	button_linear->set_tooltip(TTR("Linear"));
-	button_linear->set_h_size_flags(SIZE_EXPAND_FILL);
-	button_linear->connect("pressed", this, "_set_preset", varray(1));
-	hb->add_child(button_linear);
-
-	button_constant = memnew(ToolButton);
-	button_constant->set_tooltip(TTR("Linear"));
-	button_constant->set_h_size_flags(SIZE_EXPAND_FILL);
-	button_constant->connect("pressed", this, "_set_preset", varray(0));
-	hb->add_child(button_constant);
-
-	button_out = memnew(ToolButton);
-	button_out->set_tooltip(TTR("Out"));
-	button_out->set_h_size_flags(SIZE_EXPAND_FILL);
-	button_out->connect("pressed", this, "_set_preset", varray(0.5));
-	hb->add_child(button_out);
-
-	button_in = memnew(ToolButton);
-	button_in->set_tooltip(TTR("In"));
-	button_in->set_h_size_flags(SIZE_EXPAND_FILL);
-	button_in->connect("pressed", this, "_set_preset", varray(2));
-	hb->add_child(button_in);
-
-	button_in_out = NULL;
-	button_out_in = NULL;
-
 	easing_draw = memnew(Control);
 	easing_draw->connect("draw", this, "_draw_easing");
 	easing_draw->connect("gui_input", this, "_drag_easing");
 	easing_draw->set_default_cursor_shape(Control::CURSOR_MOVE);
-	vb->add_child(easing_draw);
+	add_child(easing_draw);
+
+	preset = memnew(PopupMenu);
+	add_child(preset);
+	preset->connect("id_pressed", this, "_set_preset");
 
 	flip = false;
+	full = false;
 }
 
 ///////////////////// VECTOR2 /////////////////////////
@@ -992,6 +1042,18 @@ void EditorPropertyVector2::update_property() {
 	setting = false;
 }
 
+void EditorPropertyVector2::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		Color base = get_color("accent_color", "Editor");
+		for (int i = 0; i < 2; i++) {
+
+			Color c = base;
+			c.set_hsv(float(i) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+			spin[i]->set_custom_label_color(true, c);
+		}
+	}
+}
+
 void EditorPropertyVector2::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyVector2::_value_changed);
@@ -1007,17 +1069,35 @@ void EditorPropertyVector2::setup(double p_min, double p_max, double p_step, boo
 }
 
 EditorPropertyVector2::EditorPropertyVector2() {
-	VBoxContainer *vb = memnew(VBoxContainer);
-	add_child(vb);
+	bool horizontal = EDITOR_GET("interface/inspector/horizontal_vector2_editing");
+
+	BoxContainer *bc;
+
+	if (horizontal) {
+		bc = memnew(HBoxContainer);
+		add_child(bc);
+		set_bottom_editor(bc);
+	} else {
+		bc = memnew(VBoxContainer);
+		add_child(bc);
+	}
+
 	static const char *desc[2] = { "x", "y" };
 	for (int i = 0; i < 2; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_flat(true);
 		spin[i]->set_label(desc[i]);
-		vb->add_child(spin[i]);
+		bc->add_child(spin[i]);
 		add_focusable(spin[i]);
 		spin[i]->connect("value_changed", this, "_value_changed");
+		if (horizontal) {
+			spin[i]->set_h_size_flags(SIZE_EXPAND_FILL);
+		}
 	}
-	set_label_reference(spin[0]); //show text and buttons around this
+
+	if (!horizontal) {
+		set_label_reference(spin[0]); //show text and buttons around this
+	}
 	setting = false;
 }
 
@@ -1044,7 +1124,17 @@ void EditorPropertyRect2::update_property() {
 	spin[3]->set_value(val.size.y);
 	setting = false;
 }
+void EditorPropertyRect2::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		Color base = get_color("accent_color", "Editor");
+		for (int i = 0; i < 4; i++) {
 
+			Color c = base;
+			c.set_hsv(float(i % 2) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+			spin[i]->set_custom_label_color(true, c);
+		}
+	}
+}
 void EditorPropertyRect2::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyRect2::_value_changed);
@@ -1066,6 +1156,8 @@ EditorPropertyRect2::EditorPropertyRect2() {
 	for (int i = 0; i < 4; i++) {
 		spin[i] = memnew(EditorSpinSlider);
 		spin[i]->set_label(desc[i]);
+		spin[i]->set_flat(true);
+
 		vb->add_child(spin[i]);
 		add_focusable(spin[i]);
 		spin[i]->connect("value_changed", this, "_value_changed");
@@ -1094,7 +1186,17 @@ void EditorPropertyVector3::update_property() {
 	spin[2]->set_value(val.z);
 	setting = false;
 }
+void EditorPropertyVector3::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		Color base = get_color("accent_color", "Editor");
+		for (int i = 0; i < 3; i++) {
 
+			Color c = base;
+			c.set_hsv(float(i) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+			spin[i]->set_custom_label_color(true, c);
+		}
+	}
+}
 void EditorPropertyVector3::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyVector3::_value_changed);
@@ -1110,17 +1212,35 @@ void EditorPropertyVector3::setup(double p_min, double p_max, double p_step, boo
 }
 
 EditorPropertyVector3::EditorPropertyVector3() {
-	VBoxContainer *vb = memnew(VBoxContainer);
-	add_child(vb);
+	bool horizontal = EDITOR_GET("interface/inspector/horizontal_vector3_editing");
+
+	BoxContainer *bc;
+
+	if (horizontal) {
+		bc = memnew(HBoxContainer);
+		add_child(bc);
+		set_bottom_editor(bc);
+	} else {
+		bc = memnew(VBoxContainer);
+		add_child(bc);
+	}
+
 	static const char *desc[3] = { "x", "y", "z" };
 	for (int i = 0; i < 3; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_flat(true);
 		spin[i]->set_label(desc[i]);
-		vb->add_child(spin[i]);
+		bc->add_child(spin[i]);
 		add_focusable(spin[i]);
 		spin[i]->connect("value_changed", this, "_value_changed");
+		if (horizontal) {
+			spin[i]->set_h_size_flags(SIZE_EXPAND_FILL);
+		}
 	}
-	set_label_reference(spin[0]); //show text and buttons around this
+
+	if (!horizontal) {
+		set_label_reference(spin[0]); //show text and buttons around this
+	}
 	setting = false;
 }
 ///////////////////// PLANE /////////////////////////
@@ -1146,7 +1266,17 @@ void EditorPropertyPlane::update_property() {
 	spin[3]->set_value(val.d);
 	setting = false;
 }
+void EditorPropertyPlane::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		Color base = get_color("accent_color", "Editor");
+		for (int i = 0; i < 3; i++) {
 
+			Color c = base;
+			c.set_hsv(float(i) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+			spin[i]->set_custom_label_color(true, c);
+		}
+	}
+}
 void EditorPropertyPlane::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyPlane::_value_changed);
@@ -1162,17 +1292,36 @@ void EditorPropertyPlane::setup(double p_min, double p_max, double p_step, bool 
 }
 
 EditorPropertyPlane::EditorPropertyPlane() {
-	VBoxContainer *vb = memnew(VBoxContainer);
-	add_child(vb);
+
+	bool horizontal = EDITOR_GET("interface/inspector/horizontal_vector3_editing");
+
+	BoxContainer *bc;
+
+	if (horizontal) {
+		bc = memnew(HBoxContainer);
+		add_child(bc);
+		set_bottom_editor(bc);
+	} else {
+		bc = memnew(VBoxContainer);
+		add_child(bc);
+	}
+
 	static const char *desc[4] = { "x", "y", "z", "d" };
 	for (int i = 0; i < 4; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_flat(true);
 		spin[i]->set_label(desc[i]);
-		vb->add_child(spin[i]);
+		bc->add_child(spin[i]);
 		add_focusable(spin[i]);
 		spin[i]->connect("value_changed", this, "_value_changed");
+		if (horizontal) {
+			spin[i]->set_h_size_flags(SIZE_EXPAND_FILL);
+		}
 	}
-	set_label_reference(spin[0]); //show text and buttons around this
+
+	if (!horizontal) {
+		set_label_reference(spin[0]); //show text and buttons around this
+	}
 	setting = false;
 }
 
@@ -1199,7 +1348,17 @@ void EditorPropertyQuat::update_property() {
 	spin[3]->set_value(val.w);
 	setting = false;
 }
+void EditorPropertyQuat::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		Color base = get_color("accent_color", "Editor");
+		for (int i = 0; i < 3; i++) {
 
+			Color c = base;
+			c.set_hsv(float(i) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+			spin[i]->set_custom_label_color(true, c);
+		}
+	}
+}
 void EditorPropertyQuat::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyQuat::_value_changed);
@@ -1215,17 +1374,35 @@ void EditorPropertyQuat::setup(double p_min, double p_max, double p_step, bool p
 }
 
 EditorPropertyQuat::EditorPropertyQuat() {
-	VBoxContainer *vb = memnew(VBoxContainer);
-	add_child(vb);
+	bool horizontal = EDITOR_GET("interface/inspector/horizontal_vector3_editing");
+
+	BoxContainer *bc;
+
+	if (horizontal) {
+		bc = memnew(HBoxContainer);
+		add_child(bc);
+		set_bottom_editor(bc);
+	} else {
+		bc = memnew(VBoxContainer);
+		add_child(bc);
+	}
+
 	static const char *desc[4] = { "x", "y", "z", "w" };
 	for (int i = 0; i < 4; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_flat(true);
 		spin[i]->set_label(desc[i]);
-		vb->add_child(spin[i]);
+		bc->add_child(spin[i]);
 		add_focusable(spin[i]);
 		spin[i]->connect("value_changed", this, "_value_changed");
+		if (horizontal) {
+			spin[i]->set_h_size_flags(SIZE_EXPAND_FILL);
+		}
 	}
-	set_label_reference(spin[0]); //show text and buttons around this
+
+	if (!horizontal) {
+		set_label_reference(spin[0]); //show text and buttons around this
+	}
 	setting = false;
 }
 
@@ -1258,7 +1435,17 @@ void EditorPropertyAABB::update_property() {
 
 	setting = false;
 }
+void EditorPropertyAABB::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		Color base = get_color("accent_color", "Editor");
+		for (int i = 0; i < 6; i++) {
 
+			Color c = base;
+			c.set_hsv(float(i % 3) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+			spin[i]->set_custom_label_color(true, c);
+		}
+	}
+}
 void EditorPropertyAABB::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyAABB::_value_changed);
@@ -1282,6 +1469,8 @@ EditorPropertyAABB::EditorPropertyAABB() {
 	for (int i = 0; i < 6; i++) {
 		spin[i] = memnew(EditorSpinSlider);
 		spin[i]->set_label(desc[i]);
+		spin[i]->set_flat(true);
+
 		g->add_child(spin[i]);
 		spin[i]->set_h_size_flags(SIZE_EXPAND_FILL);
 		add_focusable(spin[i]);
@@ -1320,7 +1509,17 @@ void EditorPropertyTransform2D::update_property() {
 
 	setting = false;
 }
+void EditorPropertyTransform2D::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		Color base = get_color("accent_color", "Editor");
+		for (int i = 0; i < 6; i++) {
 
+			Color c = base;
+			c.set_hsv(float(i % 2) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+			spin[i]->set_custom_label_color(true, c);
+		}
+	}
+}
 void EditorPropertyTransform2D::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyTransform2D::_value_changed);
@@ -1340,10 +1539,11 @@ EditorPropertyTransform2D::EditorPropertyTransform2D() {
 	g->set_columns(2);
 	add_child(g);
 
-	static const char *desc[6] = { "xx", "xy", "yx", "yy", "ox", "oy" };
+	static const char *desc[6] = { "x", "y", "x", "y", "x", "y" };
 	for (int i = 0; i < 6; i++) {
 		spin[i] = memnew(EditorSpinSlider);
 		spin[i]->set_label(desc[i]);
+		spin[i]->set_flat(true);
 		g->add_child(spin[i]);
 		spin[i]->set_h_size_flags(SIZE_EXPAND_FILL);
 		add_focusable(spin[i]);
@@ -1388,7 +1588,17 @@ void EditorPropertyBasis::update_property() {
 
 	setting = false;
 }
+void EditorPropertyBasis::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		Color base = get_color("accent_color", "Editor");
+		for (int i = 0; i < 9; i++) {
 
+			Color c = base;
+			c.set_hsv(float(i % 3) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+			spin[i]->set_custom_label_color(true, c);
+		}
+	}
+}
 void EditorPropertyBasis::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyBasis::_value_changed);
@@ -1408,10 +1618,11 @@ EditorPropertyBasis::EditorPropertyBasis() {
 	g->set_columns(3);
 	add_child(g);
 
-	static const char *desc[9] = { "xx", "xy", "xz", "yx", "yy", "yz", "zx", "zy", "zz" };
+	static const char *desc[9] = { "x", "y", "z", "x", "y", "z", "x", "y", "z" };
 	for (int i = 0; i < 9; i++) {
 		spin[i] = memnew(EditorSpinSlider);
 		spin[i]->set_label(desc[i]);
+		spin[i]->set_flat(true);
 		g->add_child(spin[i]);
 		spin[i]->set_h_size_flags(SIZE_EXPAND_FILL);
 		add_focusable(spin[i]);
@@ -1462,7 +1673,17 @@ void EditorPropertyTransform::update_property() {
 
 	setting = false;
 }
+void EditorPropertyTransform::_notification(int p_what) {
+	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
+		Color base = get_color("accent_color", "Editor");
+		for (int i = 0; i < 12; i++) {
 
+			Color c = base;
+			c.set_hsv(float(i % 3) / 3.0 + 0.05, c.get_s() * 0.75, c.get_v());
+			spin[i]->set_custom_label_color(true, c);
+		}
+	}
+}
 void EditorPropertyTransform::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_value_changed"), &EditorPropertyTransform::_value_changed);
@@ -1482,10 +1703,11 @@ EditorPropertyTransform::EditorPropertyTransform() {
 	g->set_columns(3);
 	add_child(g);
 
-	static const char *desc[12] = { "xx", "xy", "xz", "yx", "yy", "yz", "zx", "zy", "zz", "ox", "oy", "oz" };
+	static const char *desc[12] = { "x", "y", "z", "x", "y", "z", "x", "y", "z", "x", "y", "z" };
 	for (int i = 0; i < 12; i++) {
 		spin[i] = memnew(EditorSpinSlider);
 		spin[i]->set_label(desc[i]);
+		spin[i]->set_flat(true);
 		g->add_child(spin[i]);
 		spin[i]->set_h_size_flags(SIZE_EXPAND_FILL);
 		add_focusable(spin[i]);
@@ -1844,6 +2066,7 @@ void EditorPropertyResource::_resource_preview(const String &p_path, const Ref<T
 				assign->set_custom_minimum_size(Size2(1, thumbnail_size));
 			}
 			preview->set_texture(p_preview);
+			assign->set_text("");
 		}
 	}
 }
@@ -2036,6 +2259,9 @@ void EditorPropertyResource::update_property() {
 			if (!sub_inspector) {
 				sub_inspector = memnew(EditorInspector);
 				sub_inspector->set_enable_v_scroll(false);
+
+				sub_inspector->set_use_sub_inspector_bg(true);
+				sub_inspector->set_enable_capitalize_paths(true);
 
 				sub_inspector->connect("property_keyed", this, "_sub_inspector_property_keyed");
 				sub_inspector->connect("resource_selected", this, "_sub_inspector_resource_selected");
@@ -2496,6 +2722,10 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, Variant::Typ
 				add_property_editor(p_path, editor);
 			} else if (p_hint == PROPERTY_HINT_MULTILINE_TEXT) {
 				EditorPropertyMultilineText *editor = memnew(EditorPropertyMultilineText);
+				add_property_editor(p_path, editor);
+			} else if (p_hint == PROPERTY_HINT_TYPE_STRING) {
+				EditorPropertyClassName *editor = memnew(EditorPropertyClassName);
+				editor->setup("Object", p_hint_text);
 				add_property_editor(p_path, editor);
 			} else if (p_hint == PROPERTY_HINT_DIR || p_hint == PROPERTY_HINT_FILE || p_hint == PROPERTY_HINT_GLOBAL_DIR || p_hint == PROPERTY_HINT_GLOBAL_FILE) {
 

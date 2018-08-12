@@ -763,6 +763,40 @@ Vector3 PhysicsServerSW::body_get_applied_torque(RID p_body) const {
 	return body->get_applied_torque();
 };
 
+void PhysicsServerSW::body_add_central_force(RID p_body, const Vector3 &p_force) {
+	BodySW *body = body_owner.get(p_body);
+	ERR_FAIL_COND(!body);
+
+	body->add_central_force(p_force);
+	body->wakeup();
+}
+
+void PhysicsServerSW::body_add_force(RID p_body, const Vector3 &p_force, const Vector3 &p_pos) {
+	BodySW *body = body_owner.get(p_body);
+	ERR_FAIL_COND(!body);
+
+	body->add_force(p_force, p_pos);
+	body->wakeup();
+};
+
+void PhysicsServerSW::body_add_torque(RID p_body, const Vector3 &p_torque) {
+	BodySW *body = body_owner.get(p_body);
+	ERR_FAIL_COND(!body);
+
+	body->add_torque(p_torque);
+	body->wakeup();
+};
+
+void PhysicsServerSW::body_apply_central_impulse(RID p_body, const Vector3 &p_impulse) {
+	BodySW *body = body_owner.get(p_body);
+	ERR_FAIL_COND(!body);
+
+	_update_shapes();
+
+	body->apply_central_impulse(p_impulse);
+	body->wakeup();
+}
+
 void PhysicsServerSW::body_apply_impulse(RID p_body, const Vector3 &p_pos, const Vector3 &p_impulse) {
 
 	BodySW *body = body_owner.get(p_body);
@@ -1367,6 +1401,8 @@ void PhysicsServerSW::init() {
 
 void PhysicsServerSW::step(real_t p_step) {
 
+#ifndef _3D_DISABLED
+
 	if (!active)
 		return;
 
@@ -1387,6 +1423,7 @@ void PhysicsServerSW::step(real_t p_step) {
 		active_objects += E->get()->get_active_objects();
 		collision_pairs += E->get()->get_collision_pairs();
 	}
+#endif
 }
 
 void PhysicsServerSW::sync(){
@@ -1394,6 +1431,8 @@ void PhysicsServerSW::sync(){
 };
 
 void PhysicsServerSW::flush_queries() {
+
+#ifndef _3D_DISABLED
 
 	if (!active)
 		return;
@@ -1441,6 +1480,7 @@ void PhysicsServerSW::flush_queries() {
 
 		ScriptDebugger::get_singleton()->add_profiling_frame_data("physics", values);
 	}
+#endif
 };
 
 void PhysicsServerSW::finish() {

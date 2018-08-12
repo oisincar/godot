@@ -30,7 +30,13 @@
 
 #include "editor_spin_slider.h"
 #include "editor_scale.h"
+#include "math/expression.h"
 #include "os/input.h"
+
+String EditorSpinSlider::get_tooltip(const Point2 &p_pos) const {
+	return rtos(get_value());
+}
+
 String EditorSpinSlider::get_text_value() const {
 	int zeros = Math::step_decimals(get_step());
 	return String::num(get_value(), zeros);
@@ -161,20 +167,20 @@ void EditorSpinSlider::_notification(int p_what) {
 		updown_offset = -1;
 
 		Ref<StyleBox> sb = get_stylebox("normal", "LineEdit");
-		draw_style_box(sb, Rect2(Vector2(), get_size()));
+		if (!flat) {
+			draw_style_box(sb, Rect2(Vector2(), get_size()));
+		}
 		Ref<Font> font = get_font("font", "LineEdit");
+		int sep_base = 4 * EDSCALE;
+		int sep = sep_base + sb->get_offset().x; //make it have the same margin on both sides, looks better
 
-		int avail_width = get_size().width - sb->get_minimum_size().width;
-		avail_width -= font->get_string_size(label).width;
+		int string_width = font->get_string_size(label).width;
+		int number_width = get_size().width - sb->get_minimum_size().width - string_width - sep;
+
 		Ref<Texture> updown = get_icon("updown", "SpinBox");
 
 		if (get_step() == 1) {
-			avail_width -= updown->get_width();
-		}
-
-		if (has_focus()) {
-			Ref<StyleBox> focus = get_stylebox("focus", "LineEdit");
-			draw_style_box(focus, Rect2(Vector2(), get_size()));
+			number_width -= updown->get_width();
 		}
 
 		String numstr = get_text_value();
@@ -182,10 +188,26 @@ void EditorSpinSlider::_notification(int p_what) {
 		int vofs = (get_size().height - font->get_height()) / 2 + font->get_ascent();
 
 		Color fc = get_color("font_color", "LineEdit");
+		Color lc;
+		if (use_custom_label_color) {
+			lc = custom_label_color;
+		} else {
+			lc = fc;
+		}
 
-		int label_ofs = sb->get_offset().x + avail_width;
-		draw_string(font, Vector2(label_ofs, vofs), label, fc * Color(1, 1, 1, 0.5));
-		draw_string(font, Vector2(sb->get_offset().x, vofs), numstr, fc, avail_width);
+		if (flat && label != String()) {
+			Color label_bg_color = get_color("dark_color_3", "Editor");
+			draw_rect(Rect2(Vector2(), Vector2(sb->get_offset().x * 2 + string_width, get_size().height)), label_bg_color);
+		}
+
+		if (has_focus()) {
+			Ref<StyleBox> focus = get_stylebox("focus", "LineEdit");
+			draw_style_box(focus, Rect2(Vector2(), get_size()));
+		}
+
+		draw_string(font, Vector2(sb->get_offset().x, vofs), label, lc * Color(1, 1, 1, 0.5));
+
+		draw_string(font, Vector2(sb->get_offset().x + string_width + sep, vofs), numstr, fc, number_width);
 
 		if (get_step() == 1) {
 			Ref<Texture> updown = get_icon("updown", "SpinBox");
@@ -252,7 +274,12 @@ void EditorSpinSlider::_notification(int p_what) {
 		update();
 	}
 	if (p_what == NOTIFICATION_FOCUS_ENTER) {
-		if (!Input::get_singleton()->is_mouse_button_pressed(BUTTON_LEFT) && !value_input_just_closed) {
+		/* Sorry, I dont like this, it makes navigating the different fields with arrows more difficult.
+		 * Just press enter to edit.
+		 * if (Input::get_singleton()->is_mouse_button_pressed(BUTTON_LEFT) && !value_input_just_closed) {
+			_focus_entered();
+		}*/
+		if ((Input::get_singleton()->is_action_pressed("ui_focus_next") || Input::get_singleton()->is_action_pressed("ui_focus_prev")) && !value_input_just_closed) {
 			_focus_entered();
 		}
 		value_input_just_closed = false;
@@ -288,6 +315,21 @@ String EditorSpinSlider::get_label() const {
 	return label;
 }
 
+void EditorSpinSlider::_evaluate_input_text() {
+	String text = value_input->get_text();
+	Ref<Expression> expr;
+	expr.instance();
+	Error err = expr->parse(text);
+	if (err != OK) {
+		return;
+	}
+
+	Variant v = expr->execute(Array(), NULL, false);
+	if (v.get_type() == Variant::NIL)
+		return;
+	set_value(v);
+}
+
 //text_entered signal
 void EditorSpinSlider::_value_input_entered(const String &p_text) {
 	value_input_just_closed = true;
@@ -296,13 +338,13 @@ void EditorSpinSlider::_value_input_entered(const String &p_text) {
 
 //modal_closed signal
 void EditorSpinSlider::_value_input_closed() {
-	set_value(value_input->get_text().to_double());
+	_evaluate_input_text();
 	value_input_just_closed = true;
 }
 
 //focus_exited signal
 void EditorSpinSlider::_value_focus_exited() {
-	set_value(value_input->get_text().to_double());
+	_evaluate_input_text();
 	// focus is not on the same element after the vlalue_input was exited
 	// -> focus is on next element
 	// -> TAB was pressed
@@ -336,6 +378,21 @@ bool EditorSpinSlider::is_read_only() const {
 	return read_only;
 }
 
+void EditorSpinSlider::set_flat(bool p_enable) {
+
+	flat = p_enable;
+	update();
+}
+
+bool EditorSpinSlider::is_flat() const {
+	return flat;
+}
+
+void EditorSpinSlider::set_custom_label_color(bool p_use_custom_label_color, Color p_custom_label_color) {
+	use_custom_label_color = p_use_custom_label_color;
+	custom_label_color = p_custom_label_color;
+}
+
 void EditorSpinSlider::_focus_entered() {
 	Rect2 gr = get_global_rect();
 	value_input->set_text(get_text_value());
@@ -355,6 +412,9 @@ void EditorSpinSlider::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_read_only", "read_only"), &EditorSpinSlider::set_read_only);
 	ClassDB::bind_method(D_METHOD("is_read_only"), &EditorSpinSlider::is_read_only);
 
+	ClassDB::bind_method(D_METHOD("set_flat", "flat"), &EditorSpinSlider::set_flat);
+	ClassDB::bind_method(D_METHOD("is_flat"), &EditorSpinSlider::is_flat);
+
 	ClassDB::bind_method(D_METHOD("_gui_input"), &EditorSpinSlider::_gui_input);
 	ClassDB::bind_method(D_METHOD("_grabber_mouse_entered"), &EditorSpinSlider::_grabber_mouse_entered);
 	ClassDB::bind_method(D_METHOD("_grabber_mouse_exited"), &EditorSpinSlider::_grabber_mouse_exited);
@@ -365,10 +425,12 @@ void EditorSpinSlider::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "label"), "set_label", "get_label");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "read_only"), "set_read_only", "is_read_only");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "flat"), "set_flat", "is_flat");
 }
 
 EditorSpinSlider::EditorSpinSlider() {
 
+	flat = false;
 	grabbing_spinner_attempt = false;
 	grabbing_spinner = false;
 	grabbing_spinner_dist_cache = 0;
@@ -397,4 +459,5 @@ EditorSpinSlider::EditorSpinSlider() {
 	value_input_just_closed = false;
 	hide_slider = false;
 	read_only = false;
+	use_custom_label_color = false;
 }

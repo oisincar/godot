@@ -68,6 +68,12 @@ class EditorSpinSlider : public Range {
 	void _value_input_entered(const String &);
 	void _value_focus_exited();
 	bool hide_slider;
+	bool flat;
+
+	bool use_custom_label_color;
+	Color custom_label_color;
+
+	void _evaluate_input_text();
 
 protected:
 	void _notification(int p_what);
@@ -78,6 +84,8 @@ protected:
 	void _focus_entered();
 
 public:
+	String get_tooltip(const Point2 &p_pos) const;
+
 	String get_text_value() const;
 	void set_label(const String &p_label);
 	String get_label() const;
@@ -87,6 +95,11 @@ public:
 
 	void set_read_only(bool p_enable);
 	bool is_read_only() const;
+
+	void set_flat(bool p_enable);
+	bool is_flat() const;
+
+	void set_custom_label_color(bool p_use_custom_label_color, Color p_custom_label_color);
 
 	virtual Size2 get_minimum_size() const;
 	EditorSpinSlider();

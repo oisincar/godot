@@ -202,6 +202,7 @@ void Spatial::_notification(int p_what) {
 #ifdef TOOLS_ENABLED
 			if (data.gizmo.is_valid()) {
 				data.gizmo->free();
+				data.gizmo.unref();
 			}
 #endif
 
@@ -645,19 +646,15 @@ void Spatial::scale_object_local(const Vector3 &p_scale) {
 
 void Spatial::global_rotate(const Vector3 &p_axis, float p_angle) {
 
-	Basis rotation(p_axis, p_angle);
 	Transform t = get_global_transform();
-	t.basis = rotation * t.basis;
+	t.basis.rotate(p_axis, p_angle);
 	set_global_transform(t);
 }
 
 void Spatial::global_scale(const Vector3 &p_scale) {
 
-	Basis s;
-	s.set_scale(p_scale);
-
 	Transform t = get_global_transform();
-	t.basis = s * t.basis;
+	t.basis.scale(p_scale);
 	set_global_transform(t);
 }
 
@@ -797,13 +794,13 @@ void Spatial::_bind_methods() {
 
 	//ADD_PROPERTY( PropertyInfo(Variant::TRANSFORM,"transform/global",PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR ), "set_global_transform", "get_global_transform") ;
 	ADD_GROUP("Transform", "");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::TRANSFORM, "transform", PROPERTY_HINT_NONE, ""), "set_transform", "get_transform");
 	ADD_PROPERTYNZ(PropertyInfo(Variant::TRANSFORM, "global_transform", PROPERTY_HINT_NONE, "", 0), "set_global_transform", "get_global_transform");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "translation", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_translation", "get_translation");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "rotation_degrees", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_rotation_degrees", "get_rotation_degrees");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "rotation", PROPERTY_HINT_NONE, "", 0), "set_rotation", "get_rotation");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "scale", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR), "set_scale", "get_scale");
-
+	ADD_GROUP("Matrix", "");
+	ADD_PROPERTYNZ(PropertyInfo(Variant::TRANSFORM, "transform", PROPERTY_HINT_NONE, ""), "set_transform", "get_transform");
 	ADD_GROUP("Visibility", "");
 	ADD_PROPERTYNO(PropertyInfo(Variant::BOOL, "visible"), "set_visible", "is_visible");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "gizmo", PROPERTY_HINT_RESOURCE_TYPE, "SpatialGizmo", 0), "set_gizmo", "get_gizmo");

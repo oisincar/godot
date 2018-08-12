@@ -55,6 +55,9 @@ private:
 	bool draw_red;
 	bool keying;
 
+	Rect2 right_child_rect;
+	Rect2 bottom_child_rect;
+
 	Rect2 keying_rect;
 	bool keying_hover;
 	Rect2 revert_rect;
@@ -65,6 +68,7 @@ private:
 	bool can_revert;
 
 	bool use_folding;
+	bool draw_top_bg;
 
 	bool _might_be_in_instance();
 	bool _is_property_different(const Variant &p_current, const Variant &p_orig, int p_usage);
@@ -81,6 +85,8 @@ private:
 	Vector<Control *> focusables;
 	Control *label_reference;
 	Control *bottom_editor;
+
+	mutable String tooltip_text;
 
 protected:
 	void _notification(int p_what);
@@ -140,6 +146,12 @@ public:
 	float get_name_split_ratio() const;
 
 	void set_object_and_property(Object *p_object, const StringName &p_property);
+	virtual Control *make_custom_tooltip(const String &p_text) const;
+
+	String get_tooltip_text() const;
+
+	void set_draw_top_bg(bool p_draw) { draw_top_bg = p_draw; }
+
 	EditorProperty();
 };
 
@@ -177,12 +189,17 @@ class EditorInspectorCategory : public Control {
 	Ref<Texture> icon;
 	String label;
 	Color bg_color;
+	mutable String tooltip_text;
 
 protected:
 	void _notification(int p_what);
+	static void _bind_methods();
 
 public:
 	virtual Size2 get_minimum_size() const;
+	virtual Control *make_custom_tooltip(const String &p_text) const;
+
+	String get_tooltip_text() const;
 
 	EditorInspectorCategory();
 };
@@ -194,8 +211,11 @@ class EditorInspectorSection : public Container {
 	String section;
 	Object *object;
 	VBoxContainer *vbox;
+	bool vbox_added; //optimization
 	Color bg_color;
 	bool foldable;
+
+	void _test_unfold();
 
 protected:
 	void _notification(int p_what);
@@ -213,6 +233,7 @@ public:
 	Object *get_edited_object();
 
 	EditorInspectorSection();
+	~EditorInspectorSection();
 };
 
 class EditorInspector : public ScrollContainer {
@@ -249,15 +270,23 @@ class EditorInspector : public ScrollContainer {
 	bool update_all_pending;
 	bool read_only;
 	bool keying;
+	bool use_sub_inspector_bg;
 
 	float refresh_countdown;
 	bool update_tree_pending;
 	StringName _prop_edited;
 	StringName property_selected;
 	int property_focusable;
+	int update_scroll_request;
 
 	Map<StringName, Map<StringName, String> > descr_cache;
 	Map<StringName, String> class_descr_cache;
+	Set<StringName> restart_request_props;
+
+	Map<ObjectID, int> scroll_cache;
+
+	String property_prefix; //used for sectioned inspector
+	String object_class;
 
 	void _edit_set(const String &p_name, const Variant &p_value, bool p_refresh_all, const String &p_changed_field);
 
@@ -280,6 +309,8 @@ class EditorInspector : public ScrollContainer {
 
 	void _filter_changed(const String &p_text);
 	void _parse_added_editors(VBoxContainer *current_vbox, Ref<EditorInspectorPlugin> ped);
+
+	void _vscroll_changed(double);
 
 protected:
 	static void _bind_methods();
@@ -329,6 +360,14 @@ public:
 
 	void set_scroll_offset(int p_offset);
 	int get_scroll_offset() const;
+
+	void set_property_prefix(const String &p_prefix);
+	String get_property_prefix() const;
+
+	void set_object_class(const String &p_class);
+	String get_object_class() const;
+
+	void set_use_sub_inspector_bg(bool p_enable);
 
 	EditorInspector();
 };

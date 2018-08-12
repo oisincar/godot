@@ -91,6 +91,7 @@ layout(std140) uniform SceneData { //ubo:0
 	mediump float subsurface_scatter_width;
 	mediump float ambient_occlusion_affect_light;
 	mediump float ambient_occlusion_affect_ao_channel;
+	mediump float opaque_prepass_threshold;
 
 	bool fog_depth_enabled;
 	highp float fog_depth_begin;
@@ -338,7 +339,7 @@ void main() {
 #endif
 #endif
 
-	float roughness=0.0;
+	float roughness = 1.0;
 
 //defines that make writing custom shaders easier
 #define projection_matrix local_projection
@@ -679,6 +680,7 @@ layout(std140) uniform SceneData {
 	mediump float subsurface_scatter_width;
 	mediump float ambient_occlusion_affect_light;
 	mediump float ambient_occlusion_affect_ao_channel;
+	mediump float opaque_prepass_threshold;
 
 	bool fog_depth_enabled;
 	highp float fog_depth_begin;
@@ -1026,12 +1028,11 @@ LIGHT_SHADER_CODE
 		diffuse_brdf_NL = cNdotL * (1.0 / M_PI);
 #endif
 
-#if defined(TRANSMISSION_USED)
-		diffuse_light += light_color * diffuse_color * mix(vec3(diffuse_brdf_NL), vec3(M_PI), transmission) * attenuation;
-#else
 		diffuse_light += light_color * diffuse_color * diffuse_brdf_NL * attenuation;
-#endif
 
+#if defined(TRANSMISSION_USED)
+		diffuse_light += light_color * diffuse_color * (vec3(1.0 / M_PI) - diffuse_brdf_NL) * transmission * attenuation;
+#endif
 
 
 #if defined(LIGHT_USE_RIM)
@@ -1607,18 +1608,18 @@ void main() {
 
 	//lay out everything, whathever is unused is optimized away anyway
 	highp vec3 vertex = vertex_interp;
-	vec3 albedo = vec3(0.8,0.8,0.8);
+	vec3 albedo = vec3(1.0);
 	vec3 transmission = vec3(0.0);
 	float metallic = 0.0;
 	float specular = 0.5;
-	vec3 emission = vec3(0.0,0.0,0.0);
+	vec3 emission = vec3(0.0);
 	float roughness = 1.0;
 	float rim = 0.0;
 	float rim_tint = 0.0;
-	float clearcoat=0.0;
-	float clearcoat_gloss=0.0;
-	float anisotropy = 1.0;
-	vec2 anisotropy_flow = vec2(1.0,0.0);
+	float clearcoat = 0.0;
+	float clearcoat_gloss = 0.0;
+	float anisotropy = 0.0;
+	vec2 anisotropy_flow = vec2(1.0, 0.0);
 
 #if defined(ENABLE_AO)
 	float ao=1.0;
@@ -1628,7 +1629,7 @@ void main() {
 	float alpha = 1.0;
 
 #if defined(DO_SIDE_CHECK)
-	float side=float(gl_FrontFacing)*2.0-1.0;
+	float side=gl_FrontFacing ? 1.0 : -1.0;
 #else
 	float side=1.0;
 #endif
@@ -1690,9 +1691,10 @@ FRAGMENT_SHADER_CODE
 
 #ifdef USE_OPAQUE_PREPASS
 
-	if (alpha<0.99) {
+	if (alpha<opaque_prepass_threshold) {
 		discard;
 	}
+
 #endif
 
 #if defined(ENABLE_NORMALMAP)
@@ -2138,6 +2140,8 @@ FRAGMENT_SHADER_CODE
 
 #else
 
+
+
 	//approximate ambient scale for SSAO, since we will lack full ambient
 	float max_emission=max(emission.r,max(emission.g,emission.b));
 	float max_ambient=max(ambient_light.r,max(ambient_light.g,ambient_light.b));
@@ -2168,7 +2172,6 @@ FRAGMENT_SHADER_CODE
 #else
 	frag_color=vec4(emission+ambient_light+diffuse_light+specular_light,alpha);
 #endif //SHADELESS
-
 
 #endif //USE_MULTIPLE_RENDER_TARGETS
 

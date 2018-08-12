@@ -90,9 +90,15 @@ public:
 		TEXTURE_FLAG_ANISOTROPIC_FILTER = 8,
 		TEXTURE_FLAG_CONVERT_TO_LINEAR = 16,
 		TEXTURE_FLAG_MIRRORED_REPEAT = 32, /// Repeat texture, with alternate sections mirrored
-		TEXTURE_FLAG_CUBEMAP = 2048,
-		TEXTURE_FLAG_USED_FOR_STREAMING = 4096,
+		TEXTURE_FLAG_USED_FOR_STREAMING = 2048,
 		TEXTURE_FLAGS_DEFAULT = TEXTURE_FLAG_REPEAT | TEXTURE_FLAG_MIPMAPS | TEXTURE_FLAG_FILTER
+	};
+
+	enum TextureType {
+		TEXTURE_TYPE_2D,
+		TEXTURE_TYPE_CUBEMAP,
+		TEXTURE_TYPE_2D_ARRAY,
+		TEXTURE_TYPE_3D,
 	};
 
 	enum CubeMapSide {
@@ -107,17 +113,33 @@ public:
 
 	virtual RID texture_create() = 0;
 	RID texture_create_from_image(const Ref<Image> &p_image, uint32_t p_flags = TEXTURE_FLAGS_DEFAULT); // helper
-	virtual void texture_allocate(RID p_texture, int p_width, int p_height, Image::Format p_format, uint32_t p_flags = TEXTURE_FLAGS_DEFAULT) = 0;
-	virtual void texture_set_data(RID p_texture, const Ref<Image> &p_image, CubeMapSide p_cube_side = CUBEMAP_LEFT) = 0;
-	virtual void texture_set_data_partial(RID p_texture, const Ref<Image> &p_image, int src_x, int src_y, int src_w, int src_h, int dst_x, int dst_y, int p_dst_mip, CubeMapSide p_cube_side = CUBEMAP_LEFT) = 0;
-	virtual Ref<Image> texture_get_data(RID p_texture, CubeMapSide p_cube_side = CUBEMAP_LEFT) const = 0;
+	virtual void texture_allocate(RID p_texture,
+			int p_width,
+			int p_height,
+			int p_depth_3d,
+			Image::Format p_format,
+			TextureType p_type,
+			uint32_t p_flags = TEXTURE_FLAGS_DEFAULT) = 0;
+
+	virtual void texture_set_data(RID p_texture, const Ref<Image> &p_image, int p_layer = 0) = 0;
+	virtual void texture_set_data_partial(RID p_texture,
+			const Ref<Image> &p_image,
+			int src_x, int src_y,
+			int src_w, int src_h,
+			int dst_x, int dst_y,
+			int p_dst_mip,
+			int p_layer = 0) = 0;
+
+	virtual Ref<Image> texture_get_data(RID p_texture, int p_layer = 0) const = 0;
 	virtual void texture_set_flags(RID p_texture, uint32_t p_flags) = 0;
 	virtual uint32_t texture_get_flags(RID p_texture) const = 0;
 	virtual Image::Format texture_get_format(RID p_texture) const = 0;
+	virtual TextureType texture_get_type(RID p_texture) const = 0;
 	virtual uint32_t texture_get_texid(RID p_texture) const = 0;
 	virtual uint32_t texture_get_width(RID p_texture) const = 0;
 	virtual uint32_t texture_get_height(RID p_texture) const = 0;
-	virtual void texture_set_size_override(RID p_texture, int p_width, int p_height) = 0;
+	virtual uint32_t texture_get_depth(RID p_texture) const = 0;
+	virtual void texture_set_size_override(RID p_texture, int p_width, int p_height, int p_depth_3d) = 0;
 
 	virtual void texture_set_path(RID p_texture, const String &p_path) = 0;
 	virtual String texture_get_path(RID p_texture) const = 0;
@@ -132,7 +154,9 @@ public:
 
 	struct TextureInfo {
 		RID texture;
-		Size2 size;
+		uint32_t width;
+		uint32_t height;
+		uint32_t depth;
 		Image::Format format;
 		int bytes;
 		String path;
@@ -251,6 +275,10 @@ public:
 
 	virtual RID mesh_create() = 0;
 
+	virtual uint32_t mesh_surface_get_format_offset(uint32_t p_format, int p_vertex_len, int p_index_len, int p_array_index) const;
+	virtual uint32_t mesh_surface_get_format_stride(uint32_t p_format, int p_vertex_len, int p_index_len) const;
+	/// Returns stride
+	virtual uint32_t mesh_surface_make_offsets_from_format(uint32_t p_format, int p_vertex_len, int p_index_len, uint32_t *r_offsets) const;
 	virtual void mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes = Array(), uint32_t p_compress_format = ARRAY_COMPRESS_DEFAULT);
 	virtual void mesh_add_surface(RID p_mesh, uint32_t p_format, PrimitiveType p_primitive, const PoolVector<uint8_t> &p_array, int p_vertex_count, const PoolVector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<PoolVector<uint8_t> > &p_blend_shapes = Vector<PoolVector<uint8_t> >(), const Vector<AABB> &p_bone_aabbs = Vector<AABB>()) = 0;
 
@@ -805,6 +833,7 @@ public:
 
 	enum InstanceFlags {
 		INSTANCE_FLAG_USE_BAKED_LIGHT,
+		INSTANCE_FLAG_DRAW_NEXT_FRAME_IF_VISIBLE,
 		INSTANCE_FLAG_MAX
 	};
 
@@ -950,7 +979,7 @@ public:
 
 	/* EVENT QUEUING */
 
-	virtual void draw(bool p_swap_buffers = true) = 0;
+	virtual void draw(bool p_swap_buffers = true, double frame_step = 0.0) = 0;
 	virtual void sync() = 0;
 	virtual bool has_changed() const = 0;
 	virtual void init() = 0;
@@ -1049,6 +1078,7 @@ VARIANT_ENUM_CAST(VisualServer::EnvironmentSSAOQuality);
 VARIANT_ENUM_CAST(VisualServer::EnvironmentSSAOBlur);
 VARIANT_ENUM_CAST(VisualServer::InstanceFlags);
 VARIANT_ENUM_CAST(VisualServer::ShadowCastingSetting);
+VARIANT_ENUM_CAST(VisualServer::TextureType);
 
 //typedef VisualServer VS; // makes it easier to use
 #define VS VisualServer
