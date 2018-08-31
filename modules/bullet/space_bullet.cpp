@@ -236,7 +236,6 @@ bool BulletPhysicsDirectSpaceState::collide_shape(RID p_shape, const Transform &
 
 /// Returns all the info for colliding stuff :D
 // PRetty much a duplicate of collide shape, but returning more.
-
 bool BulletPhysicsDirectSpaceState::od_collide_shape(RID p_shape, const Transform &p_shape_xform, float p_margin,
                                                      Vector3* p_world_on_a, Vector3* p_world_on_b, float* p_distance, Vector3* p_normal_on_b,
                                                      int p_result_max, int &r_result_count, const Set<RID> &p_exclude, uint32_t p_collision_mask) {
