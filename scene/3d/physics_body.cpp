@@ -2126,6 +2126,7 @@ void PhysicalBone::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_simulating_physics"), &PhysicalBone::is_simulating_physics);
 
 	ClassDB::bind_method(D_METHOD("get_bone_id"), &PhysicalBone::get_bone_id);
+	ClassDB::bind_method(D_METHOD("add_force", "force", "position"), &PhysicalBone::add_force);
 
 	ClassDB::bind_method(D_METHOD("set_mass", "mass"), &PhysicalBone::set_mass);
 	ClassDB::bind_method(D_METHOD("get_mass"), &PhysicalBone::get_mass);
@@ -2477,6 +2478,10 @@ void PhysicalBone::set_gravity_scale(real_t p_gravity_scale) {
 real_t PhysicalBone::get_gravity_scale() const {
 
 	return gravity_scale;
+}
+
+void PhysicalBone::add_force(const Vector3 &p_force, const Vector3 &p_pos) {
+	PhysicsServer::get_singleton()->body_add_force(get_rid(), p_force, p_pos);
 }
 
 PhysicalBone::PhysicalBone() :

@@ -580,6 +580,7 @@ public:
 	Skeleton *find_skeleton_parent();
 
 	int get_bone_id() const { return bone_id; }
+	void add_force(const Vector3 &p_force, const Vector3 &p_pos);
 
 	void set_joint_type(JointType p_joint_type);
 	JointType get_joint_type() const;
