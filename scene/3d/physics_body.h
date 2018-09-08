@@ -369,7 +369,6 @@ public:
 };
 
 class PhysicalBone : public PhysicsBody {
-
 	GDCLASS(PhysicalBone, PhysicsBody);
 
 public:
@@ -553,6 +552,10 @@ private:
 	real_t friction;
 	real_t gravity_scale;
 
+	// PhysicsDirectBodyState *state;
+	Vector3 linear_velocity;
+	Vector3 angular_velocity;
+
 protected:
 	bool _set(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;
@@ -582,6 +585,14 @@ public:
 	Skeleton *find_skeleton_parent();
 
 	int get_bone_id() const { return bone_id; }
+
+	// Added physics funcs.
+	void set_linear_velocity(const Vector3 &p_velocity);
+	Vector3 get_linear_velocity() const;
+	void set_angular_velocity(const Vector3 &p_velocity);
+	Vector3 get_angular_velocity() const;
+	void add_force(const Vector3 &p_force, const Vector3 &p_pos);
+	void add_torque(const Vector3 &p_torque);
 
 	void set_joint_type(JointType p_joint_type);
 	JointType get_joint_type() const;
@@ -616,6 +627,7 @@ public:
 
 	void set_gravity_scale(real_t p_gravity_scale);
 	real_t get_gravity_scale() const;
+
 
 	PhysicalBone();
 	~PhysicalBone();

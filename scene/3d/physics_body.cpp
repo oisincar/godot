@@ -2119,6 +2119,10 @@ void PhysicalBone::_direct_state_changed(Object *p_state) {
 	set_global_transform(global_transform);
 	set_ignore_transform_notification(false);
 
+	// Update local velocities.
+	linear_velocity = state->get_linear_velocity();
+	angular_velocity = state->get_angular_velocity();
+
 	// Update skeleton
 	if (parent_skeleton) {
 		if (-1 != bone_id) {
@@ -2146,6 +2150,14 @@ void PhysicalBone::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_simulating_physics"), &PhysicalBone::is_simulating_physics);
 
 	ClassDB::bind_method(D_METHOD("get_bone_id"), &PhysicalBone::get_bone_id);
+
+	// Added physics funcs:
+	ClassDB::bind_method(D_METHOD("set_linear_velocity", "linear_velocity"), &PhysicalBone::set_linear_velocity);
+	ClassDB::bind_method(D_METHOD("get_linear_velocity"), &PhysicalBone::get_linear_velocity);
+	ClassDB::bind_method(D_METHOD("set_angular_velocity", "angular_velocity"), &PhysicalBone::set_angular_velocity);
+	ClassDB::bind_method(D_METHOD("get_angular_velocity"), &PhysicalBone::get_angular_velocity);
+	ClassDB::bind_method(D_METHOD("add_force", "force", "position"), &PhysicalBone::add_force);
+	ClassDB::bind_method(D_METHOD("add_torque", "torque"), &PhysicalBone::add_torque);
 
 	ClassDB::bind_method(D_METHOD("set_mass", "mass"), &PhysicalBone::set_mass);
 	ClassDB::bind_method(D_METHOD("get_mass"), &PhysicalBone::get_mass);
@@ -2501,6 +2513,37 @@ void PhysicalBone::set_gravity_scale(real_t p_gravity_scale) {
 real_t PhysicalBone::get_gravity_scale() const {
 
 	return gravity_scale;
+}
+
+void PhysicalBone::set_linear_velocity(const Vector3 &p_velocity) {
+	linear_velocity = p_velocity;
+	// if (state)
+	// 	state->set_linear_velocity(linear_velocity);
+	// else
+	PhysicsServer::get_singleton()->body_set_state(get_rid(), PhysicsServer::BODY_STATE_LINEAR_VELOCITY, linear_velocity);
+}
+
+Vector3 PhysicalBone::get_linear_velocity() const {
+	return linear_velocity;
+}
+
+void PhysicalBone::set_angular_velocity(const Vector3 &p_velocity) {
+	angular_velocity = p_velocity;
+	// if (state)
+	// 	state->set_angular_velocity(angular_velocity);
+	// else
+	PhysicsServer::get_singleton()->body_set_state(get_rid(), PhysicsServer::BODY_STATE_ANGULAR_VELOCITY, angular_velocity);
+}
+Vector3 PhysicalBone::get_angular_velocity() const {
+	return angular_velocity;
+}
+
+void PhysicalBone::add_force(const Vector3 &p_force, const Vector3 &p_pos) {
+	PhysicsServer::get_singleton()->body_add_force(get_rid(), p_force, p_pos);
+}
+
+void PhysicalBone::add_torque(const Vector3 &p_torque) {
+	PhysicsServer::get_singleton()->body_add_torque(get_rid(), p_torque);
 }
 
 PhysicalBone::PhysicalBone() :
