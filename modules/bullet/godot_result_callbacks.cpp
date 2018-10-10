@@ -36,18 +36,6 @@
 #include "rigid_body_bullet.h"
 #include <BulletCollision/CollisionDispatch/btInternalEdgeUtility.h>
 
-
-#include "os/dir_access.h"
-#include "os/file_access.h"
-#include "os/os.h"
-#include "os/thread.h"
-
-
-#include "os/dir_access.h"
-#include "os/file_access.h"
-#include "os/os.h"
-#include "os/thread.h"
-
 /**
 	@author AndreaCatania
 */
@@ -297,7 +285,7 @@ bool ODContactInfoResultCallback::needsCollision(btBroadphaseProxy *proxy0) cons
 
 btScalar ODContactInfoResultCallback::addSingleResult(btManifoldPoint &cp, const btCollisionObjectWrapper *colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper *colObj1Wrap, int partId1, int index1) {
 
-    OS::get_singleton()->print("HELLO FROM INSIDE OD GODOT :O.", cp.m_localPointA.m_floats[0]);
+    // OS::get_singleton()->print("HELLO FROM INSIDE OD GODOT :O.", cp.m_localPointA.m_floats[0]);
 
 	if (m_self_object == colObj0Wrap->getCollisionObject()) {
 		B_TO_G(cp.m_positionWorldOnA, m_world_on_a[m_count]);
@@ -308,7 +296,7 @@ btScalar ODContactInfoResultCallback::addSingleResult(btManifoldPoint &cp, const
 
         // Also part indicies... Or motion information...
 
-        OS::get_singleton()->print("WE'RE B");
+        // OS::get_singleton()->print("WE'RE B");
 	} else {
 		B_TO_G(cp.m_positionWorldOnB, m_world_on_a[m_count]);
 		B_TO_G(cp.m_positionWorldOnA, m_world_on_b[m_count]);
@@ -316,7 +304,7 @@ btScalar ODContactInfoResultCallback::addSingleResult(btManifoldPoint &cp, const
         m_distance[m_count] = cp.m_distance1;
         // Negating sign of normal, since it's facing other way.
         B_TO_G(-cp.m_normalWorldOnB,   m_normal_on_b[m_count]);
-        OS::get_singleton()->print("WE'RE A");
+        // OS::get_singleton()->print("WE'RE A");
 	}
 
 	++m_count;
