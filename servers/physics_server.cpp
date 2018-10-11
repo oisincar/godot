@@ -311,7 +311,8 @@ Array PhysicsDirectSpaceState::_cast_motion(const Ref<PhysicsShapeQueryParameter
 
 	float closest_safe, closest_unsafe;
 
-	bool res = cast_motion(p_shape_query->shape, p_shape_query->transform, p_motion, p_shape_query->margin, closest_safe, closest_unsafe, p_shape_query->exclude, p_shape_query->collision_mask, p_shape_query->collide_with_bodies, p_shape_query->collide_with_areas);
+	ShapeRestInfo rest_info;
+	bool res = cast_motion(p_shape_query->shape, p_shape_query->transform, p_motion, p_shape_query->margin, closest_safe, closest_unsafe, p_shape_query->exclude, p_shape_query->collision_mask, p_shape_query->collide_with_bodies, p_shape_query->collide_with_areas, &rest_info);
 
 	if (!res)
 		return Array();

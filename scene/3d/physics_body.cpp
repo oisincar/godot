@@ -2150,7 +2150,6 @@ void PhysicalBone::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_simulating_physics"), &PhysicalBone::is_simulating_physics);
 
 	ClassDB::bind_method(D_METHOD("get_bone_id"), &PhysicalBone::get_bone_id);
-	ClassDB::bind_method(D_METHOD("add_force", "force", "position"), &PhysicalBone::add_force);
 
 	// Added physics funcs:
 	ClassDB::bind_method(D_METHOD("set_linear_velocity", "linear_velocity"), &PhysicalBone::set_linear_velocity);
