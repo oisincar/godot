@@ -1835,7 +1835,7 @@ void Node::set_editable_instance(Node *p_node, bool p_editable) {
 	}
 }
 
-bool Node::is_editable_instance(Node *p_node) const {
+bool Node::is_editable_instance(const Node *p_node) const {
 
 	if (!p_node)
 		return false; //easier, null is never editable :)
@@ -2192,7 +2192,7 @@ void Node::_duplicate_signals(const Node *p_original, Node *p_copy) const {
 			if (p_copy->has_node(ptarget))
 				copytarget = p_copy->get_node(ptarget);
 
-			if (copy && copytarget) {
+			if (copy && copytarget && !copy->is_connected(E->get().signal, copytarget, E->get().method)) {
 				copy->connect(E->get().signal, copytarget, E->get().method, E->get().binds, E->get().flags);
 			}
 		}

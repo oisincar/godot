@@ -477,33 +477,16 @@ EditorPropertyCheck::EditorPropertyCheck() {
 
 void EditorPropertyEnum::_option_selected(int p_which) {
 
-	String text = options->get_item_text(p_which);
-	Vector<String> text_split = text.split(":");
-	if (text_split.size() == 1) {
-		emit_signal("property_changed", get_edited_property(), p_which);
-		return;
-	}
-	String name = text_split[1];
-	emit_signal("property_changed", get_edited_property(), name.to_int());
+	int val = options->get_item_metadata(p_which);
+	emit_signal("property_changed", get_edited_property(), val);
 }
 
 void EditorPropertyEnum::update_property() {
 
 	int which = get_edited_object()->get(get_edited_property());
-	if (which == 0) {
-		options->select(which);
-		return;
-	}
 
 	for (int i = 0; i < options->get_item_count(); i++) {
-		String text = options->get_item_text(i);
-		Vector<String> text_split = text.split(":");
-		if (text_split.size() == 1) {
-			options->select(which);
-			return;
-		}
-		String name = text_split[1];
-		if (itos(which) == name) {
+		if (which == (int)options->get_item_metadata(i)) {
 			options->select(i);
 			return;
 		}
@@ -511,8 +494,15 @@ void EditorPropertyEnum::update_property() {
 }
 
 void EditorPropertyEnum::setup(const Vector<String> &p_options) {
+
+	int current_val = 0;
 	for (int i = 0; i < p_options.size(); i++) {
-		options->add_item(p_options[i], i);
+		Vector<String> text_split = p_options[i].split(":");
+		if (text_split.size() != 1)
+			current_val = text_split[1].to_int();
+		options->add_item(text_split[0]);
+		options->set_item_metadata(i, current_val);
+		current_val += 1;
 	}
 }
 
@@ -1779,7 +1769,7 @@ void EditorPropertyColor::_color_changed(const Color &p_color) {
 
 void EditorPropertyColor::_popup_closed() {
 
-	emit_signal("property_changed", get_edited_property(), picker->get_pick_color(), true);
+	emit_signal("property_changed", get_edited_property(), picker->get_pick_color(), false);
 }
 
 void EditorPropertyColor::_bind_methods() {
@@ -1812,8 +1802,13 @@ void EditorPropertyNodePath::_node_selected(const NodePath &p_path) {
 
 	NodePath path = p_path;
 	Node *base_node = Object::cast_to<Node>(get_edited_object());
-	if (base_node == NULL && get_edited_object()->has_method("get_root_path")) {
-		base_node = get_edited_object()->call("get_root_path");
+	if (base_node == NULL) {
+		if (Object::cast_to<Resource>(get_edited_object())) {
+			Node *to_node = get_node(p_path);
+			path = get_tree()->get_edited_scene_root()->get_path_to(to_node);
+		} else if (get_edited_object()->has_method("get_root_path")) {
+			base_node = get_edited_object()->call("get_root_path");
+		}
 	}
 	if (base_node) { // for AnimationTrackKeyEdit
 		path = base_node->get_path().rel_path_to(p_path);
@@ -1869,6 +1864,12 @@ void EditorPropertyNodePath::update_property() {
 
 	Node *target_node = base_node->get_node(p);
 	ERR_FAIL_COND(!target_node);
+
+	if (String(target_node->get_name()).find("@") != -1) {
+		assign->set_icon(Ref<Texture>());
+		assign->set_text(p);
+		return;
+	}
 
 	assign->set_text(target_node->get_name());
 	assign->set_icon(EditorNode::get_singleton()->get_object_icon(target_node, "Node"));
@@ -2220,7 +2221,7 @@ void EditorPropertyResource::_update_menu() {
 		RES r = res;
 		if (r.is_valid() && r->get_path().is_resource_file()) {
 			menu->add_separator();
-			menu->add_item(TTR("Show in File System"), OBJ_MENU_SHOW_IN_FILE_SYSTEM);
+			menu->add_item(TTR("Show in FileSystem"), OBJ_MENU_SHOW_IN_FILE_SYSTEM);
 		}
 	} else {
 	}
@@ -2380,7 +2381,7 @@ void EditorPropertyResource::update_property() {
 		if (res->get_name() != String()) {
 			assign->set_text(res->get_name());
 		} else if (res->get_path().is_resource_file()) {
-			assign->set_text(res->get_name());
+			assign->set_text(res->get_path().get_file());
 			assign->set_tooltip(res->get_path());
 		} else {
 			assign->set_text(res->get_class());

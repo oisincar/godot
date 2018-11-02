@@ -2498,7 +2498,7 @@ bool ShaderLanguage::_get_completable_identifier(BlockNode *p_block, CompletionT
 
 	identifier = StringName();
 
-	TkPos pos;
+	TkPos pos = { 0, 0 };
 
 	Token tk = _get_token();
 
@@ -3506,6 +3506,7 @@ ShaderLanguage::Node *ShaderLanguage::_reduce_expression(BlockNode *p_block, Sha
 						nv.sint = -cn->values[i].sint;
 					} break;
 					case TYPE_UINT: {
+						// FIXME: This can't work on uint
 						nv.uint = -cn->values[i].uint;
 					} break;
 					case TYPE_FLOAT: {

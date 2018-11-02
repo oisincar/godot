@@ -39,7 +39,7 @@
 #include "file_access_android.h"
 #include "main/main.h"
 #include "servers/visual/visual_server_raster.h"
-//#include "servers/visual/visual_server_wrap_mt.h"
+#include "servers/visual/visual_server_wrap_mt.h"
 
 #ifdef ANDROID_NATIVE_ACTIVITY
 #include "dir_access_android.h"
@@ -183,13 +183,11 @@ Error OS_Android::initialize(const VideoMode &p_desired, int p_video_driver, int
 	video_driver_index = p_video_driver;
 
 	visual_server = memnew(VisualServerRaster);
-	/*	if (get_render_thread_mode() != RENDER_THREAD_UNSAFE) {
-
+	if (get_render_thread_mode() != RENDER_THREAD_UNSAFE) {
 		visual_server = memnew(VisualServerWrapMT(visual_server, false));
-	};*/
+	}
 
 	visual_server->init();
-	//	visual_server->cursor_set_visible(false, 0);
 
 	AudioDriverManager::initialize(p_audio_driver);
 
@@ -586,7 +584,7 @@ Error OS_Android::shell_open(String p_uri) {
 
 String OS_Android::get_resource_dir() const {
 
-	return "/"; //android has it's own filesystem for resources inside the APK
+	return "/"; //android has its own filesystem for resources inside the APK
 }
 
 String OS_Android::get_locale() const {

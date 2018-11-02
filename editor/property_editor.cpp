@@ -132,7 +132,7 @@ void CustomPropertyEditor::_menu_option(int p_which) {
 				emit_signal("variant_changed");
 			} else if (hint == PROPERTY_HINT_ENUM) {
 
-				v = p_which;
+				v = menu->get_item_metadata(p_which);
 				emit_signal("variant_changed");
 			}
 		} break;
@@ -427,12 +427,14 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 			} else if (hint == PROPERTY_HINT_ENUM) {
 
 				Vector<String> options = hint_text.split(",");
+				int current_val = 0;
 				for (int i = 0; i < options.size(); i++) {
-					if (options[i].find(":") != -1) {
-						menu->add_item(options[i].get_slicec(':', 0), options[i].get_slicec(':', 1).to_int());
-					} else {
-						menu->add_item(options[i], i);
-					}
+					Vector<String> text_split = options[i].split(":");
+					if (text_split.size() != 1)
+						current_val = text_split[1].to_int();
+					menu->add_item(text_split[0]);
+					menu->set_item_metadata(i, current_val);
+					current_val += 1;
 				}
 				menu->set_position(get_position());
 				menu->popup();
@@ -966,7 +968,7 @@ bool CustomPropertyEditor::edit(Object *p_owner, const String &p_name, Variant::
 				RES r = v;
 				if (r.is_valid() && r->get_path().is_resource_file()) {
 					menu->add_separator();
-					menu->add_item(TTR("Show in File System"), OBJ_MENU_SHOW_IN_FILE_SYSTEM);
+					menu->add_item(TTR("Show in FileSystem"), OBJ_MENU_SHOW_IN_FILE_SYSTEM);
 				}
 			} else {
 			}

@@ -1246,14 +1246,11 @@ bool RasterizerSceneGLES3::_setup_material(RasterizerStorageGLES3::Material *p_m
 				case ShaderLanguage::TYPE_SAMPLER3D: {
 
 					target = GL_TEXTURE_3D;
+					tex = storage->resources.white_tex_3d;
 
-					switch (texture_hints[i]) {
-
-						// TODO
-						default: {
-							tex = storage->resources.white_tex_3d;
-						} break;
-					}
+					//switch (texture_hints[i]) {
+					// TODO
+					//}
 
 				} break;
 
@@ -1431,7 +1428,16 @@ void RasterizerSceneGLES3::_setup_geometry(RenderList::Element *e, const Transfo
 			if (particles->draw_order == VS::PARTICLES_DRAW_ORDER_VIEW_DEPTH && particles->particle_valid_histories[1]) {
 
 				glBindBuffer(GL_ARRAY_BUFFER, particles->particle_buffer_histories[1]); //modify the buffer, this was used 2 frames ago so it should be good enough for flushing
-				RasterizerGLES3Particle *particle_array = (RasterizerGLES3Particle *)glMapBufferRange(GL_ARRAY_BUFFER, 0, particles->amount * 24 * sizeof(float), GL_MAP_READ_BIT | GL_MAP_WRITE_BIT);
+				RasterizerGLES3Particle *particle_array;
+#ifndef __EMSCRIPTEN__
+				particle_array = static_cast<RasterizerGLES3Particle *>(glMapBufferRange(GL_ARRAY_BUFFER, 0, particles->amount * 24 * sizeof(float), GL_MAP_READ_BIT | GL_MAP_WRITE_BIT));
+#else
+				PoolVector<RasterizerGLES3Particle> particle_vector;
+				particle_vector.resize(particles->amount);
+				PoolVector<RasterizerGLES3Particle>::Write w = particle_vector.write();
+				particle_array = w.ptr();
+				glGetBufferSubData(GL_ARRAY_BUFFER, 0, particles->amount * sizeof(RasterizerGLES3Particle), particle_array);
+#endif
 
 				SortArray<RasterizerGLES3Particle, RasterizerGLES3ParticleSort> sorter;
 
@@ -1443,7 +1449,17 @@ void RasterizerSceneGLES3::_setup_geometry(RenderList::Element *e, const Transfo
 
 				sorter.sort(particle_array, particles->amount);
 
+#ifndef __EMSCRIPTEN__
 				glUnmapBuffer(GL_ARRAY_BUFFER);
+#else
+				w = PoolVector<RasterizerGLES3Particle>::Write();
+				particle_array = NULL;
+				{
+					PoolVector<RasterizerGLES3Particle>::Read r = particle_vector.read();
+					glBufferSubData(GL_ARRAY_BUFFER, 0, particles->amount * sizeof(RasterizerGLES3Particle), r.ptr());
+				}
+				particle_vector = PoolVector<RasterizerGLES3Particle>();
+#endif
 #ifdef DEBUG_ENABLED
 				if (state.debug_draw == VS::VIEWPORT_DEBUG_DRAW_WIREFRAME && s->instancing_array_wireframe_id) {
 					glBindVertexArray(s->instancing_array_wireframe_id); // use the wireframe instancing array ID
@@ -4855,10 +4871,7 @@ void RasterizerSceneGLES3::initialize() {
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	render_list.max_elements = GLOBAL_DEF_RST("rendering/limits/rendering/max_renderable_elements", (int)RenderList::DEFAULT_MAX_ELEMENTS);
-	if (render_list.max_elements > 1000000)
-		render_list.max_elements = 1000000;
-	if (render_list.max_elements < 1024)
-		render_list.max_elements = 1024;
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/limits/rendering/max_renderable_elements", PropertyInfo(Variant::INT, "rendering/limits/rendering/max_renderable_elements", PROPERTY_HINT_RANGE, "1024,1000000,1"));
 
 	{
 		//quad buffers
@@ -5057,6 +5070,7 @@ void RasterizerSceneGLES3::initialize() {
 	{
 
 		uint32_t immediate_buffer_size = GLOBAL_DEF("rendering/limits/buffers/immediate_buffer_size_kb", 2048);
+		ProjectSettings::get_singleton()->set_custom_property_info("rendering/limits/buffers/immediate_buffer_size_kb", PropertyInfo(Variant::INT, "rendering/limits/buffers/immediate_buffer_size_kb", PROPERTY_HINT_RANGE, "0,8192,1,or_greater"));
 
 		glGenBuffers(1, &state.immediate_buffer);
 		glBindBuffer(GL_ARRAY_BUFFER, state.immediate_buffer);

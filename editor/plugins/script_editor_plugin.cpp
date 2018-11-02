@@ -490,7 +490,7 @@ void ScriptEditor::_open_recent_script(int p_idx) {
 			edit(text_file, true);
 			return;
 		}
-		// if it's a path then its most likely a deleted file not help
+		// if it's a path then it's most likely a deleted file not help
 	} else if (path.find("::") != -1) {
 		// built-in script
 		Ref<Script> script = ResourceLoader::load(path);
@@ -1363,7 +1363,9 @@ void ScriptEditor::_notification(int p_what) {
 			if (is_visible()) {
 				find_in_files_button->show();
 			} else {
-				find_in_files->hide();
+				if (find_in_files->is_visible_in_tree()) {
+					editor->hide_bottom_panel();
+				}
 				find_in_files_button->hide();
 			}
 
@@ -2806,8 +2808,7 @@ void ScriptEditor::_start_find_in_files(bool with_replace) {
 	find_in_files->set_with_replace(with_replace);
 	find_in_files->start_search();
 
-	find_in_files_button->set_pressed(true);
-	find_in_files->show();
+	editor->make_bottom_panel_item_visible(find_in_files);
 }
 
 void ScriptEditor::_on_find_in_files_modified_files(PoolStringArray paths) {
@@ -2912,7 +2913,7 @@ ScriptEditor::ScriptEditor(EditorNode *p_editor) {
 
 	script_list = memnew(ItemList);
 	list_split->add_child(script_list);
-	script_list->set_custom_minimum_size(Size2(150 * EDSCALE, 90)); //need to give a bit of limit to avoid it from disappearing
+	script_list->set_custom_minimum_size(Size2(150, 90) * EDSCALE); //need to give a bit of limit to avoid it from disappearing
 	script_list->set_v_size_flags(SIZE_EXPAND_FILL);
 	script_split->set_split_offset(140);
 	_sort_list_on_update = true;
@@ -2951,7 +2952,7 @@ ScriptEditor::ScriptEditor(EditorNode *p_editor) {
 	overview_vbox->add_child(members_overview);
 
 	members_overview->set_allow_reselect(true);
-	members_overview->set_custom_minimum_size(Size2(0, 90)); //need to give a bit of limit to avoid it from disappearing
+	members_overview->set_custom_minimum_size(Size2(0, 90) * EDSCALE); //need to give a bit of limit to avoid it from disappearing
 	members_overview->set_v_size_flags(SIZE_EXPAND_FILL);
 	members_overview->set_allow_rmb_select(true);
 	members_overview->set_drag_forwarding(this);
@@ -2959,12 +2960,12 @@ ScriptEditor::ScriptEditor(EditorNode *p_editor) {
 	help_overview = memnew(ItemList);
 	overview_vbox->add_child(help_overview);
 	help_overview->set_allow_reselect(true);
-	help_overview->set_custom_minimum_size(Size2(0, 90)); //need to give a bit of limit to avoid it from disappearing
+	help_overview->set_custom_minimum_size(Size2(0, 90) * EDSCALE); //need to give a bit of limit to avoid it from disappearing
 	help_overview->set_v_size_flags(SIZE_EXPAND_FILL);
 
 	tab_container = memnew(TabContainer);
 	tab_container->set_tabs_visible(false);
-	tab_container->set_custom_minimum_size(Size2(200 * EDSCALE, 0));
+	tab_container->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
 	script_split->add_child(tab_container);
 	tab_container->set_h_size_flags(SIZE_EXPAND_FILL);
 
@@ -2997,7 +2998,7 @@ ScriptEditor::ScriptEditor(EditorNode *p_editor) {
 	file_menu->get_popup()->add_separator();
 	file_menu->get_popup()->add_shortcut(ED_SHORTCUT("script_editor/reload_script_soft", TTR("Soft Reload Script"), KEY_MASK_CMD | KEY_MASK_SHIFT | KEY_R), FILE_TOOL_RELOAD_SOFT);
 	file_menu->get_popup()->add_shortcut(ED_SHORTCUT("script_editor/copy_path", TTR("Copy Script Path")), FILE_COPY_PATH);
-	file_menu->get_popup()->add_shortcut(ED_SHORTCUT("script_editor/show_in_file_system", TTR("Show In File System")), SHOW_IN_FILE_SYSTEM);
+	file_menu->get_popup()->add_shortcut(ED_SHORTCUT("script_editor/show_in_file_system", TTR("Show in FileSystem")), SHOW_IN_FILE_SYSTEM);
 	file_menu->get_popup()->add_separator();
 
 	file_menu->get_popup()->add_shortcut(ED_SHORTCUT("script_editor/history_previous", TTR("History Previous"), KEY_MASK_ALT | KEY_LEFT), WINDOW_PREV);
@@ -3174,7 +3175,6 @@ ScriptEditor::ScriptEditor(EditorNode *p_editor) {
 	add_child(find_in_files_dialog);
 	find_in_files = memnew(FindInFilesPanel);
 	find_in_files_button = editor->add_bottom_panel_item(TTR("Search Results"), find_in_files);
-	find_in_files_button->set_tooltip(TTR("Search in files"));
 	find_in_files->set_custom_minimum_size(Size2(0, 200) * EDSCALE);
 	find_in_files->connect(FindInFilesPanel::SIGNAL_RESULT_SELECTED, this, "_on_find_in_files_result_selected");
 	find_in_files->connect(FindInFilesPanel::SIGNAL_FILES_MODIFIED, this, "_on_find_in_files_modified_files");

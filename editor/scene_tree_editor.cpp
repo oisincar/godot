@@ -73,7 +73,7 @@ void SceneTreeEditor::_cell_button_pressed(Object *p_item, int p_column, int p_i
 		undo_redo->create_action(TTR("Toggle Visible"));
 		_toggle_visible(n);
 		List<Node *> selection = editor_selection->get_selected_node_list();
-		if (selection.size() > 1) {
+		if (selection.size() > 1 && selection.find(n) != NULL) {
 			for (List<Node *>::Element *E = selection.front(); E; E = E->next()) {
 				Node *nv = E->get();
 				ERR_FAIL_COND(!nv);
@@ -664,6 +664,13 @@ void SceneTreeEditor::_renamed() {
 	NodePath np = which->get_metadata(0);
 	Node *n = get_node(np);
 	ERR_FAIL_COND(!n);
+
+	// Empty node names are not allowed, so resets it to previous text and show warning
+	if (which->get_text(0).strip_edges().empty()) {
+		which->set_text(0, n->get_name());
+		EditorNode::get_singleton()->show_warning(TTR("No name provided"));
+		return;
+	}
 
 	String new_name = which->get_text(0);
 	if (!Node::_validate_node_name(new_name)) {
