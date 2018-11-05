@@ -826,7 +826,6 @@ int RigidBody::get_max_contacts_reported() const {
 
 void RigidBody::add_central_force(const Vector3 &p_force) {
 	PhysicsServer::get_singleton()->body_add_central_force(get_rid(), p_force);
-	test
 }
 
 void RigidBody::add_force(const Vector3 &p_force, const Vector3 &p_pos) {

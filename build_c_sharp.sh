@@ -9,3 +9,4 @@ scons p=x11 target=release_debug tools=yes module_mono_enabled=yes -j8
 
 
 # Note it may be required to rm all *.gen.* files from /modules/mono/glue/
+# To pull update it's git pull upstream master
