@@ -592,8 +592,13 @@ public:
 	Vector3 get_linear_velocity() const;
 	void set_angular_velocity(const Vector3 &p_velocity);
 	Vector3 get_angular_velocity() const;
+
+	void add_central_force(const Vector3 &p_force);
 	void add_force(const Vector3 &p_force, const Vector3 &p_pos);
 	void add_torque(const Vector3 &p_torque);
+	void apply_central_impulse(const Vector3 &p_impulse);
+	void apply_impulse(const Vector3 &p_pos, const Vector3 &p_impulse);
+	void apply_torque_impulse(const Vector3 &p_impulse);
 
 	void set_joint_type(JointType p_joint_type);
 	JointType get_joint_type() const;

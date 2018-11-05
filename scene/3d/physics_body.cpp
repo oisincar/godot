@@ -826,6 +826,7 @@ int RigidBody::get_max_contacts_reported() const {
 
 void RigidBody::add_central_force(const Vector3 &p_force) {
 	PhysicsServer::get_singleton()->body_add_central_force(get_rid(), p_force);
+	test
 }
 
 void RigidBody::add_force(const Vector3 &p_force, const Vector3 &p_pos) {
@@ -2174,8 +2175,13 @@ void PhysicalBone::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_linear_velocity"), &PhysicalBone::get_linear_velocity);
 	ClassDB::bind_method(D_METHOD("set_angular_velocity", "angular_velocity"), &PhysicalBone::set_angular_velocity);
 	ClassDB::bind_method(D_METHOD("get_angular_velocity"), &PhysicalBone::get_angular_velocity);
+
+	ClassDB::bind_method(D_METHOD("add_central_force", "force"), &PhysicalBone::add_central_force);
 	ClassDB::bind_method(D_METHOD("add_force", "force", "position"), &PhysicalBone::add_force);
 	ClassDB::bind_method(D_METHOD("add_torque", "torque"), &PhysicalBone::add_torque);
+	ClassDB::bind_method(D_METHOD("apply_central_impulse", "j"), &PhysicalBone::apply_central_impulse);
+	ClassDB::bind_method(D_METHOD("apply_impulse", "position", "j"), &PhysicalBone::apply_impulse);
+	ClassDB::bind_method(D_METHOD("apply_torque_impulse", "j"), &PhysicalBone::apply_torque_impulse);
 
 	ClassDB::bind_method(D_METHOD("set_mass", "mass"), &PhysicalBone::set_mass);
 	ClassDB::bind_method(D_METHOD("get_mass"), &PhysicalBone::get_mass);
@@ -2557,12 +2563,29 @@ Vector3 PhysicalBone::get_angular_velocity() const {
 	return angular_velocity;
 }
 
+void PhysicalBone::add_central_force(const Vector3 &p_force) {
+	PhysicsServer::get_singleton()->body_add_central_force(get_rid(), p_force);
+}
+
 void PhysicalBone::add_force(const Vector3 &p_force, const Vector3 &p_pos) {
 	PhysicsServer::get_singleton()->body_add_force(get_rid(), p_force, p_pos);
 }
 
 void PhysicalBone::add_torque(const Vector3 &p_torque) {
 	PhysicsServer::get_singleton()->body_add_torque(get_rid(), p_torque);
+}
+
+void PhysicalBone::apply_central_impulse(const Vector3 &p_impulse) {
+	PhysicsServer::get_singleton()->body_apply_central_impulse(get_rid(), p_impulse);
+}
+
+void PhysicalBone::apply_impulse(const Vector3 &p_pos, const Vector3 &p_impulse) {
+
+	PhysicsServer::get_singleton()->body_apply_impulse(get_rid(), p_pos, p_impulse);
+}
+
+void PhysicalBone::apply_torque_impulse(const Vector3 &p_impulse) {
+	PhysicsServer::get_singleton()->body_apply_torque_impulse(get_rid(), p_impulse);
 }
 
 PhysicalBone::PhysicalBone() :
