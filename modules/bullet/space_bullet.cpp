@@ -183,7 +183,8 @@ bool BulletPhysicsDirectSpaceState::cast_motion(const RID &p_shape, const Transf
 	if (btResult.hasHit()) {
 		const btScalar l = bt_motion.length();
 		r_closest_unsafe = btResult.m_closestHitFraction;
-		r_closest_safe = MAX(r_closest_unsafe - (1 - ((l - 0.01) / l)), 0);
+		// r_closest_safe = MAX(r_closest_unsafe - (1 - ((l - 0.01) / l)), 0);
+		r_closest_safe = MAX(r_closest_unsafe - (0.01/l), 0);
 		if (r_info) {
 			if (btCollisionObject::CO_RIGID_BODY == btResult.m_hitCollisionObject->getInternalType()) {
 				B_TO_G(static_cast<const btRigidBody *>(btResult.m_hitCollisionObject)->getVelocityInLocalPoint(btResult.m_hitPointWorld), r_info->linear_velocity);
@@ -191,8 +192,10 @@ bool BulletPhysicsDirectSpaceState::cast_motion(const RID &p_shape, const Transf
 			CollisionObjectBullet *collision_object = static_cast<CollisionObjectBullet *>(btResult.m_hitCollisionObject->getUserPointer());
 			B_TO_G(btResult.m_hitPointWorld, r_info->point);
 			B_TO_G(btResult.m_hitNormalWorld, r_info->normal);
+			ObjectID id = collision_object->get_instance_id();
 			r_info->rid = collision_object->get_self();
-			r_info->collider_id = collision_object->get_instance_id();
+			r_info->collider_id = id;
+			r_info->collider = id == 0 ? NULL : ObjectDB::get_instance(id);
 			r_info->shape = btResult.m_shapeId;
 		}
 	}

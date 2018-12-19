@@ -295,6 +295,7 @@ btScalar ODContactInfoResultCallback::addSingleResult(btManifoldPoint &cp, const
 		B_TO_G(cp.m_normalWorldOnB,   m_normal_on_b[m_count]);
 
         // Also part indicies... Or motion information...
+		// m_result->collider_id = colObj->get_instance_id();
 
         // OS::get_singleton()->print("WE'RE B");
 	} else {

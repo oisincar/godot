@@ -147,7 +147,7 @@ class PhysicsDirectSpaceState : public Object {
 private:
 	Dictionary _intersect_ray(const Vector3 &p_from, const Vector3 &p_to, const Vector<RID> &p_exclude = Vector<RID>(), uint32_t p_collision_mask = 0, bool p_collide_with_bodies = true, bool p_collide_with_areas = false);
 	Array _intersect_shape(const Ref<PhysicsShapeQueryParameters> &p_shape_query, int p_max_results = 32);
-	Array _cast_motion(const Ref<PhysicsShapeQueryParameters> &p_shape_query, const Vector3 &p_motion);
+	Dictionary _cast_motion(const Ref<PhysicsShapeQueryParameters> &p_shape_query, const Vector3 &p_motion);
 	Array _collide_shape(const Ref<PhysicsShapeQueryParameters> &p_shape_query, int p_max_results = 32);
     Array _od_collide_shape(const Ref<PhysicsShapeQueryParameters> &p_shape_query, int p_max_results);
 	Dictionary _get_rest_info(const Ref<PhysicsShapeQueryParameters> &p_shape_query);
@@ -186,6 +186,7 @@ public:
 		Vector3 normal;
 		RID rid;
 		ObjectID collider_id;
+		Object *collider;
 		int shape;
 		Vector3 linear_velocity; //velocity at contact point
 	};

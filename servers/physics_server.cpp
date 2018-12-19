@@ -305,26 +305,28 @@ Array PhysicsDirectSpaceState::_intersect_shape(const Ref<PhysicsShapeQueryParam
 	return ret;
 }
 
-Array PhysicsDirectSpaceState::_cast_motion(const Ref<PhysicsShapeQueryParameters> &p_shape_query, const Vector3 &p_motion) {
+Dictionary PhysicsDirectSpaceState::_cast_motion(const Ref<PhysicsShapeQueryParameters> &p_shape_query, const Vector3 &p_motion) {
 
-	ERR_FAIL_COND_V(!p_shape_query.is_valid(), Array());
+	ERR_FAIL_COND_V(!p_shape_query.is_valid(), Dictionary());
 
 	float closest_safe, closest_unsafe;
 
-	ShapeRestInfo rest_info;
-	bool res = cast_motion(p_shape_query->shape, p_shape_query->transform, p_motion, p_shape_query->margin, closest_safe, closest_unsafe, p_shape_query->exclude, p_shape_query->collision_mask, p_shape_query->collide_with_bodies, p_shape_query->collide_with_areas, &rest_info);
+	ShapeRestInfo sri;
+	bool res = cast_motion(p_shape_query->shape, p_shape_query->transform, p_motion, p_shape_query->margin, closest_safe, closest_unsafe, p_shape_query->exclude, p_shape_query->collision_mask, p_shape_query->collide_with_bodies, p_shape_query->collide_with_areas, &sri);
 
+	Dictionary r;
 	if (!res)
-		return Array();
-	Array ret;
-	ret.resize(4);
-	ret[0] = closest_safe;
-	ret[1] = closest_unsafe;
+		return r;
 
-    ret[2] = rest_info.point;
-    ret[3] = rest_info.normal;
+	r["point"] = sri.point;
+	r["normal"] = sri.normal;
+	r["rid"] = sri.rid;
+	r["collider_id"] = sri.collider_id;
+	r["collider"] = sri.collider;
+	r["shape"] = sri.shape;
+	r["linear_velocity"] = sri.linear_velocity;
 
-	return ret;
+	return r;
 }
 
 Array PhysicsDirectSpaceState::_collide_shape(const Ref<PhysicsShapeQueryParameters> &p_shape_query, int p_max_results) {
@@ -344,6 +346,7 @@ Array PhysicsDirectSpaceState::_collide_shape(const Ref<PhysicsShapeQueryParamet
 	return r;
 }
 
+// Returns an array of dictionaries.
 Array PhysicsDirectSpaceState::_od_collide_shape(const Ref<PhysicsShapeQueryParameters> &p_shape_query, int p_max_results) {
 	Vector<Vector3> world_on_a,
                     world_on_b,
@@ -359,15 +362,26 @@ Array PhysicsDirectSpaceState::_od_collide_shape(const Ref<PhysicsShapeQueryPara
 	bool res = od_collide_shape(p_shape_query->shape, p_shape_query->transform, p_shape_query->margin,
                              world_on_a.ptrw(), world_on_b.ptrw(), distance.ptrw(), normal_on_b.ptrw(),
                              p_max_results, rc, p_shape_query->exclude, p_shape_query->collision_mask);
-	if (!res)
-		return Array();
 	Array r;
-	r.resize(rc * 4);
+	if (!res)
+		return r;
+
+	r.resize(rc);
+	// r.resize(rc * 4);
 	for (int i = 0; i < rc; i++) {
-		r[i*4 + 0] = world_on_a[i];
-		r[i*4 + 1] = world_on_b[i];
-		r[i*4 + 2] = distance[i];
-		r[i*4 + 3] = normal_on_b[i];
+		Dictionary d;
+
+		d["world_a"] = world_on_a[i];
+		d["world_b"] = world_on_b[i];
+		d["distance"] = distance[i];
+		d["normal"] = normal_on_b[i];
+
+		r[i] = d;
+
+		// r[i*4 + 0] = world_on_a[i];
+		// r[i*4 + 1] = world_on_b[i];
+		// r[i*4 + 2] = distance[i];
+		// r[i*4 + 3] = normal_on_b[i];
     }
 
 	return r;
@@ -390,6 +404,7 @@ Dictionary PhysicsDirectSpaceState::_get_rest_info(const Ref<PhysicsShapeQueryPa
 	r["normal"] = sri.normal;
 	r["rid"] = sri.rid;
 	r["collider_id"] = sri.collider_id;
+	r["collider"] = sri.collider;
 	r["shape"] = sri.shape;
 	r["linear_velocity"] = sri.linear_velocity;
 
