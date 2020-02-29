@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -37,7 +37,8 @@ EditorRun::Status EditorRun::get_status() const {
 
 	return status;
 }
-Error EditorRun::run(const String &p_scene, const String p_custom_args, const List<String> &p_breakpoints) {
+
+Error EditorRun::run(const String &p_scene, const String &p_custom_args, const List<String> &p_breakpoints, const bool &p_skip_breakpoints, const int &p_instances) {
 
 	List<String> args;
 
@@ -50,10 +51,8 @@ Error EditorRun::run(const String &p_scene, const String p_custom_args, const Li
 		args.push_back(resource_path.replace(" ", "%20"));
 	}
 
-	if (true) {
-		args.push_back("--remote-debug");
-		args.push_back(remote_host + ":" + String::num(remote_port));
-	}
+	args.push_back("--remote-debug");
+	args.push_back(remote_host + ":" + String::num(remote_port));
 
 	args.push_back("--allow_focus_steal_pid");
 	args.push_back(itos(OS::get_singleton()->get_process_id()));
@@ -164,6 +163,10 @@ Error EditorRun::run(const String &p_scene, const String p_custom_args, const Li
 		args.push_back(bpoints);
 	}
 
+	if (p_skip_breakpoints) {
+		args.push_back("--skip-breakpoints");
+	}
+
 	if (p_scene != "") {
 		args.push_back(p_scene);
 	}
@@ -184,20 +187,40 @@ Error EditorRun::run(const String &p_scene, const String p_custom_args, const Li
 	};
 	printf("\n");
 
-	pid = 0;
-	Error err = OS::get_singleton()->execute(exec, args, false, &pid);
-	ERR_FAIL_COND_V(err, err);
+	for (int i = 0; i < p_instances; i++) {
+		OS::ProcessID pid = 0;
+		Error err = OS::get_singleton()->execute(exec, args, false, &pid);
+		ERR_FAIL_COND_V(err, err);
+		pids.push_back(pid);
+	}
 
 	status = STATUS_PLAY;
 
 	return OK;
 }
 
+bool EditorRun::has_child_process(OS::ProcessID p_pid) const {
+	for (const List<OS::ProcessID>::Element *E = pids.front(); E; E = E->next()) {
+		if (E->get() == p_pid)
+			return true;
+	}
+	return false;
+}
+
+void EditorRun::stop_child_process(OS::ProcessID p_pid) {
+	if (has_child_process(p_pid)) {
+		OS::get_singleton()->kill(p_pid);
+		pids.erase(p_pid);
+	}
+}
+
 void EditorRun::stop() {
 
-	if (status != STATUS_STOP && pid != 0) {
+	if (status != STATUS_STOP && pids.size() > 0) {
 
-		OS::get_singleton()->kill(pid);
+		for (List<OS::ProcessID>::Element *E = pids.front(); E; E = E->next()) {
+			OS::get_singleton()->kill(E->get());
+		}
 	}
 
 	status = STATUS_STOP;

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -53,36 +53,26 @@ void ScrollBar::_gui_input(Ref<InputEvent> p_event) {
 	if (b.is_valid()) {
 		accept_event();
 
-		if (b->get_button_index() == 5 && b->is_pressed()) {
+		if (b->get_button_index() == BUTTON_WHEEL_DOWN && b->is_pressed()) {
 
-			/*
-			if (orientation==VERTICAL)
-				set_val( get_val() + get_page() / 4.0 );
-			else
-			*/
 			set_value(get_value() + get_page() / 4.0);
 			accept_event();
 		}
 
-		if (b->get_button_index() == 4 && b->is_pressed()) {
+		if (b->get_button_index() == BUTTON_WHEEL_UP && b->is_pressed()) {
 
-			/*
-			if (orientation==HORIZONTAL)
-				set_val( get_val() - get_page() / 4.0 );
-			else
-			*/
 			set_value(get_value() - get_page() / 4.0);
 			accept_event();
 		}
 
-		if (b->get_button_index() != 1)
+		if (b->get_button_index() != BUTTON_LEFT)
 			return;
 
 		if (b->is_pressed()) {
 
 			double ofs = orientation == VERTICAL ? b->get_position().y : b->get_position().x;
-			Ref<Texture> decr = get_icon("decrement");
-			Ref<Texture> incr = get_icon("increment");
+			Ref<Texture2D> decr = get_icon("decrement");
+			Ref<Texture2D> incr = get_icon("increment");
 
 			double decr_size = orientation == VERTICAL ? decr->get_height() : decr->get_width();
 			double incr_size = orientation == VERTICAL ? incr->get_height() : incr->get_width();
@@ -158,7 +148,7 @@ void ScrollBar::_gui_input(Ref<InputEvent> p_event) {
 		if (drag.active) {
 
 			double ofs = orientation == VERTICAL ? m->get_position().y : m->get_position().x;
-			Ref<Texture> decr = get_icon("decrement");
+			Ref<Texture2D> decr = get_icon("decrement");
 
 			double decr_size = orientation == VERTICAL ? decr->get_height() : decr->get_width();
 			ofs -= decr_size;
@@ -169,8 +159,8 @@ void ScrollBar::_gui_input(Ref<InputEvent> p_event) {
 		} else {
 
 			double ofs = orientation == VERTICAL ? m->get_position().y : m->get_position().x;
-			Ref<Texture> decr = get_icon("decrement");
-			Ref<Texture> incr = get_icon("increment");
+			Ref<Texture2D> decr = get_icon("decrement");
+			Ref<Texture2D> incr = get_icon("increment");
 
 			double decr_size = orientation == VERTICAL ? decr->get_height() : decr->get_width();
 			double incr_size = orientation == VERTICAL ? incr->get_height() : incr->get_width();
@@ -243,8 +233,8 @@ void ScrollBar::_notification(int p_what) {
 
 		RID ci = get_canvas_item();
 
-		Ref<Texture> decr = highlight == HIGHLIGHT_DECR ? get_icon("decrement_highlight") : get_icon("decrement");
-		Ref<Texture> incr = highlight == HIGHLIGHT_INCR ? get_icon("increment_highlight") : get_icon("increment");
+		Ref<Texture2D> decr = highlight == HIGHLIGHT_DECR ? get_icon("decrement_highlight") : get_icon("decrement");
+		Ref<Texture2D> incr = highlight == HIGHLIGHT_INCR ? get_icon("increment_highlight") : get_icon("increment");
 		Ref<StyleBox> bg = has_focus() ? get_stylebox("scroll_focus") : get_stylebox("scroll");
 
 		Ref<StyleBox> grabber;
@@ -306,15 +296,15 @@ void ScrollBar::_notification(int p_what) {
 		}
 
 		if (drag_node) {
-			drag_node->connect("gui_input", this, "_drag_node_input");
-			drag_node->connect("tree_exiting", this, "_drag_node_exit", varray(), CONNECT_ONESHOT);
+			drag_node->connect("gui_input", callable_mp(this, &ScrollBar::_drag_node_input));
+			drag_node->connect("tree_exiting", callable_mp(this, &ScrollBar::_drag_node_exit), varray(), CONNECT_ONESHOT);
 		}
 	}
 	if (p_what == NOTIFICATION_EXIT_TREE) {
 
 		if (drag_node) {
-			drag_node->disconnect("gui_input", this, "_drag_node_input");
-			drag_node->disconnect("tree_exiting", this, "_drag_node_exit");
+			drag_node->disconnect("gui_input", callable_mp(this, &ScrollBar::_drag_node_input));
+			drag_node->disconnect("tree_exiting", callable_mp(this, &ScrollBar::_drag_node_exit));
 		}
 
 		drag_node = NULL;
@@ -330,6 +320,8 @@ void ScrollBar::_notification(int p_what) {
 
 				if (Math::abs(vel) >= dist) {
 					set_value(target_scroll);
+					scrolling = false;
+					set_physics_process_internal(false);
 				} else {
 					set_value(get_value() + vel);
 				}
@@ -447,27 +439,26 @@ double ScrollBar::get_grabber_size() const {
 }
 
 double ScrollBar::get_area_size() const {
-
-	if (orientation == VERTICAL) {
-
-		double area = get_size().height;
-		area -= get_stylebox("scroll")->get_minimum_size().height;
-		area -= get_icon("increment")->get_height();
-		area -= get_icon("decrement")->get_height();
-		area -= get_grabber_min_size();
-		return area;
-
-	} else if (orientation == HORIZONTAL) {
-
-		double area = get_size().width;
-		area -= get_stylebox("scroll")->get_minimum_size().width;
-		area -= get_icon("increment")->get_width();
-		area -= get_icon("decrement")->get_width();
-		area -= get_grabber_min_size();
-		return area;
-	} else {
-
-		return 0;
+	switch (orientation) {
+		case VERTICAL: {
+			double area = get_size().height;
+			area -= get_stylebox("scroll")->get_minimum_size().height;
+			area -= get_icon("increment")->get_height();
+			area -= get_icon("decrement")->get_height();
+			area -= get_grabber_min_size();
+			return area;
+		} break;
+		case HORIZONTAL: {
+			double area = get_size().width;
+			area -= get_stylebox("scroll")->get_minimum_size().width;
+			area -= get_icon("increment")->get_width();
+			area -= get_icon("decrement")->get_width();
+			area -= get_grabber_min_size();
+			return area;
+		} break;
+		default: {
+			return 0.0;
+		}
 	}
 }
 
@@ -509,8 +500,8 @@ double ScrollBar::get_grabber_offset() const {
 
 Size2 ScrollBar::get_minimum_size() const {
 
-	Ref<Texture> incr = get_icon("increment");
-	Ref<Texture> decr = get_icon("decrement");
+	Ref<Texture2D> incr = get_icon("increment");
+	Ref<Texture2D> decr = get_icon("decrement");
 	Ref<StyleBox> bg = get_stylebox("scroll");
 	Size2 minsize;
 
@@ -548,7 +539,7 @@ float ScrollBar::get_custom_step() const {
 void ScrollBar::_drag_node_exit() {
 
 	if (drag_node) {
-		drag_node->disconnect("gui_input", this, "_drag_node_input");
+		drag_node->disconnect("gui_input", callable_mp(this, &ScrollBar::_drag_node_input));
 	}
 	drag_node = NULL;
 }
@@ -620,8 +611,8 @@ void ScrollBar::set_drag_node(const NodePath &p_path) {
 	if (is_inside_tree()) {
 
 		if (drag_node) {
-			drag_node->disconnect("gui_input", this, "_drag_node_input");
-			drag_node->disconnect("tree_exiting", this, "_drag_node_exit");
+			drag_node->disconnect("gui_input", callable_mp(this, &ScrollBar::_drag_node_input));
+			drag_node->disconnect("tree_exiting", callable_mp(this, &ScrollBar::_drag_node_exit));
 		}
 	}
 
@@ -636,8 +627,8 @@ void ScrollBar::set_drag_node(const NodePath &p_path) {
 		}
 
 		if (drag_node) {
-			drag_node->connect("gui_input", this, "_drag_node_input");
-			drag_node->connect("tree_exiting", this, "_drag_node_exit", varray(), CONNECT_ONESHOT);
+			drag_node->connect("gui_input", callable_mp(this, &ScrollBar::_drag_node_input));
+			drag_node->connect("tree_exiting", callable_mp(this, &ScrollBar::_drag_node_exit), varray(), CONNECT_ONESHOT);
 		}
 	}
 }
@@ -660,12 +651,10 @@ void ScrollBar::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_gui_input"), &ScrollBar::_gui_input);
 	ClassDB::bind_method(D_METHOD("set_custom_step", "step"), &ScrollBar::set_custom_step);
 	ClassDB::bind_method(D_METHOD("get_custom_step"), &ScrollBar::get_custom_step);
-	ClassDB::bind_method(D_METHOD("_drag_node_input"), &ScrollBar::_drag_node_input);
-	ClassDB::bind_method(D_METHOD("_drag_node_exit"), &ScrollBar::_drag_node_exit);
 
 	ADD_SIGNAL(MethodInfo("scrolling"));
 
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "custom_step", PROPERTY_HINT_RANGE, "-1,4096"), "set_custom_step", "get_custom_step");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "custom_step", PROPERTY_HINT_RANGE, "-1,4096"), "set_custom_step", "get_custom_step");
 }
 
 ScrollBar::ScrollBar(Orientation p_orientation) {

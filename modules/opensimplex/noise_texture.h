@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,8 +39,8 @@
 #include "editor/editor_plugin.h"
 #include "editor/property_editor.h"
 
-class NoiseTexture : public Texture {
-	GDCLASS(NoiseTexture, Texture)
+class NoiseTexture : public Texture2D {
+	GDCLASS(NoiseTexture, Texture2D);
 
 private:
 	Ref<Image> data;
@@ -51,13 +51,14 @@ private:
 	bool update_queued;
 	bool regen_queued;
 
-	RID texture;
+	mutable RID texture;
 	uint32_t flags;
 
 	Ref<OpenSimplexNoise> noise;
 	Vector2i size;
 	bool seamless;
 	bool as_normalmap;
+	float bump_strength;
 
 	void _thread_done(const Ref<Image> &p_image);
 	static void _thread_function(void *p_ud);
@@ -69,27 +70,28 @@ private:
 
 protected:
 	static void _bind_methods();
+	virtual void _validate_property(PropertyInfo &property) const;
 
 public:
 	void set_noise(Ref<OpenSimplexNoise> p_noise);
 	Ref<OpenSimplexNoise> get_noise();
 
 	void set_width(int p_width);
-	void set_height(int p_hieght);
+	void set_height(int p_height);
 
 	void set_seamless(bool p_seamless);
 	bool get_seamless();
 
-	void set_as_normalmap(bool p_seamless);
+	void set_as_normalmap(bool p_as_normalmap);
 	bool is_normalmap();
+
+	void set_bump_strength(float p_bump_strength);
+	float get_bump_strength();
 
 	int get_width() const;
 	int get_height() const;
 
-	virtual void set_flags(uint32_t p_flags);
-	virtual uint32_t get_flags() const;
-
-	virtual RID get_rid() const { return texture; }
+	virtual RID get_rid() const;
 	virtual bool has_alpha() const { return false; }
 
 	virtual Ref<Image> get_data() const;

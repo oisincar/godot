@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,12 +32,14 @@
 
 #include "core/io/resource_loader.h"
 #include "core/project_settings.h"
+#include "editor/audio_stream_preview.h"
+#include "editor/editor_scale.h"
 #include "editor/editor_settings.h"
 
 void AudioStreamEditor::_notification(int p_what) {
 
 	if (p_what == NOTIFICATION_READY) {
-		AudioStreamPreviewGenerator::get_singleton()->connect("preview_updated", this, "_preview_changed");
+		AudioStreamPreviewGenerator::get_singleton()->connect("preview_updated", callable_mp(this, &AudioStreamEditor::_preview_changed));
 	}
 
 	if (p_what == NOTIFICATION_THEME_CHANGED || p_what == NOTIFICATION_ENTER_TREE) {
@@ -53,7 +55,6 @@ void AudioStreamEditor::_notification(int p_what) {
 	if (p_what == NOTIFICATION_PROCESS) {
 		_current = _player->get_playback_position();
 		_indicator->update();
-		_preview->update();
 	}
 
 	if (p_what == NOTIFICATION_VISIBILITY_CHANGED) {
@@ -121,15 +122,19 @@ void AudioStreamEditor::_play() {
 void AudioStreamEditor::_stop() {
 
 	_player->stop();
-	_on_finished();
+	_play_button->set_icon(get_icon("MainPlay", "EditorIcons"));
+	_current = 0;
+	_indicator->update();
+	set_process(false);
 }
 
 void AudioStreamEditor::_on_finished() {
 
 	_play_button->set_icon(get_icon("MainPlay", "EditorIcons"));
-	_current = 0;
-	_indicator->update();
-	set_process(false);
+	if (_current == _player->get_stream()->get_length()) {
+		_current = 0;
+		_indicator->update();
+	}
 }
 
 void AudioStreamEditor::_draw_indicator() {
@@ -192,24 +197,16 @@ void AudioStreamEditor::edit(Ref<AudioStream> p_stream) {
 }
 
 void AudioStreamEditor::_bind_methods() {
-
-	ClassDB::bind_method(D_METHOD("_preview_changed"), &AudioStreamEditor::_preview_changed);
-	ClassDB::bind_method(D_METHOD("_play"), &AudioStreamEditor::_play);
-	ClassDB::bind_method(D_METHOD("_stop"), &AudioStreamEditor::_stop);
-	ClassDB::bind_method(D_METHOD("_on_finished"), &AudioStreamEditor::_on_finished);
-	ClassDB::bind_method(D_METHOD("_draw_preview"), &AudioStreamEditor::_draw_preview);
-	ClassDB::bind_method(D_METHOD("_draw_indicator"), &AudioStreamEditor::_draw_indicator);
-	ClassDB::bind_method(D_METHOD("_on_input_indicator"), &AudioStreamEditor::_on_input_indicator);
 }
 
 AudioStreamEditor::AudioStreamEditor() {
 
-	set_custom_minimum_size(Size2(1, 100));
+	set_custom_minimum_size(Size2(1, 100) * EDSCALE);
 	_current = 0;
 	_dragging = false;
 
 	_player = memnew(AudioStreamPlayer);
-	_player->connect("finished", this, "_on_finished");
+	_player->connect("finished", callable_mp(this, &AudioStreamEditor::_on_finished));
 	add_child(_player);
 
 	VBoxContainer *vbox = memnew(VBoxContainer);
@@ -218,13 +215,13 @@ AudioStreamEditor::AudioStreamEditor() {
 
 	_preview = memnew(ColorRect);
 	_preview->set_v_size_flags(SIZE_EXPAND_FILL);
-	_preview->connect("draw", this, "_draw_preview");
+	_preview->connect("draw", callable_mp(this, &AudioStreamEditor::_draw_preview));
 	vbox->add_child(_preview);
 
 	_indicator = memnew(Control);
 	_indicator->set_anchors_and_margins_preset(PRESET_WIDE);
-	_indicator->connect("draw", this, "_draw_indicator");
-	_indicator->connect("gui_input", this, "_on_input_indicator");
+	_indicator->connect("draw", callable_mp(this, &AudioStreamEditor::_draw_indicator));
+	_indicator->connect("gui_input", callable_mp(this, &AudioStreamEditor::_on_input_indicator));
 	_preview->add_child(_indicator);
 
 	HBoxContainer *hbox = memnew(HBoxContainer);
@@ -234,12 +231,12 @@ AudioStreamEditor::AudioStreamEditor() {
 	_play_button = memnew(ToolButton);
 	hbox->add_child(_play_button);
 	_play_button->set_focus_mode(Control::FOCUS_NONE);
-	_play_button->connect("pressed", this, "_play");
+	_play_button->connect("pressed", callable_mp(this, &AudioStreamEditor::_play));
 
 	_stop_button = memnew(ToolButton);
 	hbox->add_child(_stop_button);
 	_stop_button->set_focus_mode(Control::FOCUS_NONE);
-	_stop_button->connect("pressed", this, "_stop");
+	_stop_button->connect("pressed", callable_mp(this, &AudioStreamEditor::_stop));
 
 	_current_label = memnew(Label);
 	_current_label->set_align(Label::ALIGN_RIGHT);

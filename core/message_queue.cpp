@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,6 +30,7 @@
 
 #include "message_queue.h"
 
+#include "core/core_string_names.h"
 #include "core/project_settings.h"
 #include "core/script_language.h"
 
@@ -42,38 +43,7 @@ MessageQueue *MessageQueue::get_singleton() {
 
 Error MessageQueue::push_call(ObjectID p_id, const StringName &p_method, const Variant **p_args, int p_argcount, bool p_show_error) {
 
-	_THREAD_SAFE_METHOD_
-
-	int room_needed = sizeof(Message) + sizeof(Variant) * p_argcount;
-
-	if ((buffer_end + room_needed) >= buffer_size) {
-		String type;
-		if (ObjectDB::get_instance(p_id))
-			type = ObjectDB::get_instance(p_id)->get_class();
-		print_line("Failed method: " + type + ":" + p_method + " target ID: " + itos(p_id));
-		statistics();
-		ERR_EXPLAIN("Message queue out of memory. Try increasing 'message_queue_size_kb' in project settings.");
-		ERR_FAIL_V(ERR_OUT_OF_MEMORY);
-	}
-
-	Message *msg = memnew_placement(&buffer[buffer_end], Message);
-	msg->args = p_argcount;
-	msg->instance_ID = p_id;
-	msg->target = p_method;
-	msg->type = TYPE_CALL;
-	if (p_show_error)
-		msg->type |= FLAG_SHOW_ERROR;
-
-	buffer_end += sizeof(Message);
-
-	for (int i = 0; i < p_argcount; i++) {
-
-		Variant *v = memnew_placement(&buffer[buffer_end], Variant);
-		buffer_end += sizeof(Variant);
-		*v = *p_args[i];
-	}
-
-	return OK;
+	return push_callable(Callable(p_id, p_method), p_args, p_argcount, p_show_error);
 }
 
 Error MessageQueue::push_call(ObjectID p_id, const StringName &p_method, VARIANT_ARG_DECLARE) {
@@ -103,14 +73,12 @@ Error MessageQueue::push_set(ObjectID p_id, const StringName &p_prop, const Vari
 			type = ObjectDB::get_instance(p_id)->get_class();
 		print_line("Failed set: " + type + ":" + p_prop + " target ID: " + itos(p_id));
 		statistics();
-		ERR_EXPLAIN("Message queue out of memory. Try increasing 'message_queue_size_kb' in project settings.");
-		ERR_FAIL_V(ERR_OUT_OF_MEMORY);
+		ERR_FAIL_V_MSG(ERR_OUT_OF_MEMORY, "Message queue out of memory. Try increasing 'memory/limits/message_queue/max_size_kb' in project settings.");
 	}
 
 	Message *msg = memnew_placement(&buffer[buffer_end], Message);
 	msg->args = 1;
-	msg->instance_ID = p_id;
-	msg->target = p_prop;
+	msg->callable = Callable(p_id, p_prop);
 	msg->type = TYPE_SET;
 
 	buffer_end += sizeof(Message);
@@ -131,19 +99,15 @@ Error MessageQueue::push_notification(ObjectID p_id, int p_notification) {
 	uint8_t room_needed = sizeof(Message);
 
 	if ((buffer_end + room_needed) >= buffer_size) {
-		String type;
-		if (ObjectDB::get_instance(p_id))
-			type = ObjectDB::get_instance(p_id)->get_class();
 		print_line("Failed notification: " + itos(p_notification) + " target ID: " + itos(p_id));
 		statistics();
-		ERR_EXPLAIN("Message queue out of memory. Try increasing 'message_queue_size_kb' in project settings.");
-		ERR_FAIL_V(ERR_OUT_OF_MEMORY);
+		ERR_FAIL_V_MSG(ERR_OUT_OF_MEMORY, "Message queue out of memory. Try increasing 'memory/limits/message_queue/max_size_kb' in project settings.");
 	}
 
 	Message *msg = memnew_placement(&buffer[buffer_end], Message);
 
 	msg->type = TYPE_NOTIFICATION;
-	msg->instance_ID = p_id;
+	msg->callable = Callable(p_id, CoreStringNames::get_singleton()->notification); //name is meaningless but callable needs it
 	//msg->target;
 	msg->notification = p_notification;
 
@@ -166,18 +130,49 @@ Error MessageQueue::push_set(Object *p_object, const StringName &p_prop, const V
 	return push_set(p_object->get_instance_id(), p_prop, p_value);
 }
 
+Error MessageQueue::push_callable(const Callable &p_callable, const Variant **p_args, int p_argcount, bool p_show_error) {
+
+	_THREAD_SAFE_METHOD_
+
+	int room_needed = sizeof(Message) + sizeof(Variant) * p_argcount;
+
+	if ((buffer_end + room_needed) >= buffer_size) {
+		print_line("Failed method: " + p_callable);
+		statistics();
+		ERR_FAIL_V_MSG(ERR_OUT_OF_MEMORY, "Message queue out of memory. Try increasing 'memory/limits/message_queue/max_size_kb' in project settings.");
+	}
+
+	Message *msg = memnew_placement(&buffer[buffer_end], Message);
+	msg->args = p_argcount;
+	msg->callable = p_callable;
+	msg->type = TYPE_CALL;
+	if (p_show_error)
+		msg->type |= FLAG_SHOW_ERROR;
+
+	buffer_end += sizeof(Message);
+
+	for (int i = 0; i < p_argcount; i++) {
+
+		Variant *v = memnew_placement(&buffer[buffer_end], Variant);
+		buffer_end += sizeof(Variant);
+		*v = *p_args[i];
+	}
+
+	return OK;
+}
+
 void MessageQueue::statistics() {
 
 	Map<StringName, int> set_count;
 	Map<int, int> notify_count;
-	Map<StringName, int> call_count;
+	Map<Callable, int> call_count;
 	int null_count = 0;
 
 	uint32_t read_pos = 0;
 	while (read_pos < buffer_end) {
 		Message *message = (Message *)&buffer[read_pos];
 
-		Object *target = ObjectDB::get_instance(message->instance_ID);
+		Object *target = message->callable.get_object();
 
 		if (target != NULL) {
 
@@ -185,10 +180,10 @@ void MessageQueue::statistics() {
 
 				case TYPE_CALL: {
 
-					if (!call_count.has(message->target))
-						call_count[message->target] = 0;
+					if (!call_count.has(message->callable))
+						call_count[message->callable] = 0;
 
-					call_count[message->target]++;
+					call_count[message->callable]++;
 
 				} break;
 				case TYPE_NOTIFICATION: {
@@ -201,17 +196,18 @@ void MessageQueue::statistics() {
 				} break;
 				case TYPE_SET: {
 
-					if (!set_count.has(message->target))
-						set_count[message->target] = 0;
+					StringName t = message->callable.get_method();
+					if (!set_count.has(t))
+						set_count[t] = 0;
 
-					set_count[message->target]++;
+					set_count[t]++;
 
 				} break;
 			}
 
+		} else {
 			//object was deleted
 			print_line("Object was deleted while awaiting a callback");
-		} else {
 
 			null_count++;
 		}
@@ -228,7 +224,7 @@ void MessageQueue::statistics() {
 		print_line("SET " + E->key() + ": " + itos(E->get()));
 	}
 
-	for (Map<StringName, int>::Element *E = call_count.front(); E; E = E->next()) {
+	for (Map<Callable, int>::Element *E = call_count.front(); E; E = E->next()) {
 		print_line("CALL " + E->key() + ": " + itos(E->get()));
 	}
 
@@ -242,7 +238,7 @@ int MessageQueue::get_max_buffer_usage() const {
 	return buffer_max_used;
 }
 
-void MessageQueue::_call_function(Object *p_target, const StringName &p_func, const Variant *p_args, int p_argcount, bool p_show_error) {
+void MessageQueue::_call_function(const Callable &p_callable, const Variant *p_args, int p_argcount, bool p_show_error) {
 
 	const Variant **argptrs = NULL;
 	if (p_argcount) {
@@ -252,11 +248,12 @@ void MessageQueue::_call_function(Object *p_target, const StringName &p_func, co
 		}
 	}
 
-	Variant::CallError ce;
-	p_target->call(p_func, argptrs, p_argcount, ce);
-	if (p_show_error && ce.error != Variant::CallError::CALL_OK) {
+	Callable::CallError ce;
+	Variant ret;
+	p_callable.call(argptrs, p_argcount, ret, ce);
+	if (p_show_error && ce.error != Callable::CallError::CALL_OK) {
 
-		ERR_PRINTS("Error calling deferred method: " + Variant::get_call_error_text(p_target, p_func, argptrs, p_argcount, ce));
+		ERR_PRINT("Error calling deferred method: " + Variant::get_callable_error_text(p_callable, argptrs, p_argcount, ce) + ".");
 	}
 }
 
@@ -270,6 +267,9 @@ void MessageQueue::flush() {
 
 	//using reverse locking strategy
 	_THREAD_SAFE_LOCK_
+
+	ERR_FAIL_COND(flushing); //already flushing, you did something odd
+	flushing = true;
 
 	while (read_pos < buffer_end) {
 
@@ -286,7 +286,7 @@ void MessageQueue::flush() {
 
 		_THREAD_SAFE_UNLOCK_
 
-		Object *target = ObjectDB::get_instance(message->instance_ID);
+		Object *target = message->callable.get_object();
 
 		if (target != NULL) {
 
@@ -297,11 +297,7 @@ void MessageQueue::flush() {
 
 					// messages don't expect a return value
 
-					_call_function(target, message->target, args, message->args, message->type & FLAG_SHOW_ERROR);
-
-					for (int i = 0; i < message->args; i++) {
-						args[i].~Variant();
-					}
+					_call_function(message->callable, args, message->args, message->type & FLAG_SHOW_ERROR);
 
 				} break;
 				case TYPE_NOTIFICATION: {
@@ -314,10 +310,16 @@ void MessageQueue::flush() {
 
 					Variant *arg = (Variant *)(message + 1);
 					// messages don't expect a return value
-					target->set(message->target, *arg);
+					target->set(message->callable.get_method(), *arg);
 
-					arg->~Variant();
 				} break;
+			}
+		}
+
+		if ((message->type & FLAG_MASK) != TYPE_NOTIFICATION) {
+			Variant *args = (Variant *)(message + 1);
+			for (int i = 0; i < message->args; i++) {
+				args[i].~Variant();
 			}
 		}
 
@@ -327,13 +329,20 @@ void MessageQueue::flush() {
 	}
 
 	buffer_end = 0; // reset buffer
+	flushing = false;
 	_THREAD_SAFE_UNLOCK_
+}
+
+bool MessageQueue::is_flushing() const {
+
+	return flushing;
 }
 
 MessageQueue::MessageQueue() {
 
-	ERR_FAIL_COND(singleton != NULL);
+	ERR_FAIL_COND_MSG(singleton != NULL, "MessageQueue singleton already exist.");
 	singleton = this;
+	flushing = false;
 
 	buffer_end = 0;
 	buffer_max_used = 0;

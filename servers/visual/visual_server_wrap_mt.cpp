@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -136,7 +136,7 @@ void VisualServerWrapMT::finish() {
 		visual_server->finish();
 	}
 
-	texture_free_cached_ids();
+	sky_free_cached_ids();
 	shader_free_cached_ids();
 	material_free_cached_ids();
 	mesh_free_cached_ids();
@@ -148,10 +148,12 @@ void VisualServerWrapMT::finish() {
 	spot_light_free_cached_ids();
 	reflection_probe_free_cached_ids();
 	gi_probe_free_cached_ids();
+	lightmap_capture_free_cached_ids();
 	particles_free_cached_ids();
 	camera_free_cached_ids();
 	viewport_free_cached_ids();
 	environment_free_cached_ids();
+	camera_effects_free_cached_ids();
 	scenario_free_cached_ids();
 	instance_free_cached_ids();
 	canvas_free_cached_ids();
@@ -178,7 +180,6 @@ VisualServerWrapMT::VisualServerWrapMT(VisualServer *p_contained, bool p_create_
 	thread = NULL;
 	draw_pending = 0;
 	draw_thread_up = false;
-	alloc_mutex = Mutex::create();
 	pool_max_size = GLOBAL_GET("memory/limits/multithreaded_server/rid_pool_prealloc");
 
 	if (!p_create_thread) {
@@ -191,6 +192,5 @@ VisualServerWrapMT::VisualServerWrapMT(VisualServer *p_contained, bool p_create_
 VisualServerWrapMT::~VisualServerWrapMT() {
 
 	memdelete(visual_server);
-	memdelete(alloc_mutex);
 	//finish();
 }

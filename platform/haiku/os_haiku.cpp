@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,10 +28,9 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#include "drivers/gles3/rasterizer_gles3.h"
-
 #include "os_haiku.h"
 
+#include "drivers/gles2/rasterizer_gles2.h"
 #include "main/main.h"
 #include "servers/physics/physics_server_sw.h"
 #include "servers/visual/visual_server_raster.h"
@@ -69,7 +68,7 @@ void OS_Haiku::run() {
 	main_loop->finish();
 }
 
-String OS_Haiku::get_name() {
+String OS_Haiku::get_name() const {
 	return "Haiku";
 }
 
@@ -78,7 +77,7 @@ int OS_Haiku::get_video_driver_count() const {
 }
 
 const char *OS_Haiku::get_video_driver_name(int p_driver) const {
-	return "GLES3";
+	return "GLES2";
 }
 
 int OS_Haiku::get_current_video_driver() const {
@@ -112,9 +111,9 @@ Error OS_Haiku::initialize(const VideoMode &p_desired, int p_video_driver, int p
 	context_gl->initialize();
 	context_gl->make_current();
 	context_gl->set_use_vsync(current_video_mode.use_vsync);
-	RasterizerGLES3::register_config();
-	RasterizerGLES3::make_current();
-
+	// FIXME: That's not how the rasterizer setup should happen.
+	RasterizerGLES2::register_config();
+	RasterizerGLES2::make_current();
 #endif
 
 	visual_server = memnew(VisualServerRaster);
@@ -201,6 +200,10 @@ int OS_Haiku::get_mouse_button_state() const {
 
 void OS_Haiku::set_cursor_shape(CursorShape p_shape) {
 	//ERR_PRINT("set_cursor_shape() NOT IMPLEMENTED");
+}
+
+OS::CursorShape OS_Haiku::get_cursor_shape() const {
+	// TODO: implement get_cursor_shape
 }
 
 void OS_Haiku::set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot) {
@@ -322,7 +325,7 @@ String OS_Haiku::get_executable_path() const {
 
 bool OS_Haiku::_check_internal_feature_support(const String &p_feature) {
 
-	return p_feature == "pc" || p_feature == "s3tc";
+	return p_feature == "pc";
 }
 
 String OS_Haiku::get_config_path() const {
@@ -356,19 +359,4 @@ String OS_Haiku::get_cache_path() const {
 	} else {
 		return get_config_path();
 	}
-}
-
-OS::PowerState OS_Haiku::get_power_state() {
-	WARN_PRINT("Power management is not implemented on this platform, defaulting to POWERSTATE_UNKNOWN");
-	return OS::POWERSTATE_UNKNOWN;
-}
-
-int OS_Haiku::get_power_seconds_left() {
-	WARN_PRINT("Power management is not implemented on this platform, defaulting to -1");
-	return -1;
-}
-
-int OS_Haiku::get_power_percent_left() {
-	WARN_PRINT("Power management is not implemented on this platform, defaulting to -1");
-	return -1;
 }

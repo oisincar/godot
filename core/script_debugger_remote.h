@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,40 +39,89 @@
 
 class ScriptDebuggerRemote : public ScriptDebugger {
 
-	struct Message {
-
-		String message;
-		Array data;
-	};
-
-	struct ProfileInfoSort {
-
-		bool operator()(ScriptLanguage::ProfilingInfo *A, ScriptLanguage::ProfilingInfo *B) const {
-			return A->total_time < B->total_time;
+public:
+	class ResourceInfo {
+	public:
+		String path;
+		String format;
+		String type;
+		RID id;
+		int vram;
+		bool operator<(const ResourceInfo &p_img) const { return vram == p_img.vram ? id < p_img.id : vram > p_img.vram; }
+		ResourceInfo() {
+			vram = 0;
 		}
 	};
 
-	Vector<ScriptLanguage::ProfilingInfo> profile_info;
-	Vector<ScriptLanguage::ProfilingInfo *> profile_info_ptrs;
+	class ResourceUsage {
+	public:
+		List<ResourceInfo> infos;
 
-	Map<StringName, int> profiler_function_signature_map;
-	float frame_time, idle_time, physics_time, physics_frame_time;
+		Array serialize();
+		bool deserialize(const Array &p_arr);
+	};
 
-	bool profiling;
-	int max_frame_functions;
-	bool skip_profile_frame;
-	bool reload_all_scripts;
+	class FrameInfo {
+	public:
+		StringName name;
+		float self_time;
+		float total_time;
 
-	Ref<StreamPeerTCP> tcp_client;
-	Ref<PacketPeerStream> packet_peer_stream;
+		FrameInfo() {
+			self_time = 0;
+			total_time = 0;
+		}
+	};
 
-	uint64_t last_perf_time;
-	Object *performance;
-	bool requested_quit;
-	Mutex *mutex;
+	class FrameFunction {
+	public:
+		int sig_id;
+		int call_count;
+		StringName name;
+		float self_time;
+		float total_time;
 
-	struct OutputError {
+		FrameFunction() {
+			sig_id = -1;
+			call_count = 0;
+			self_time = 0;
+			total_time = 0;
+		}
+	};
 
+	class ScriptStackVariable {
+	public:
+		String name;
+		Variant value;
+		int type;
+		ScriptStackVariable() {
+			type = -1;
+		}
+
+		Array serialize(int max_size = 1 << 20); // 1 MiB default.
+		bool deserialize(const Array &p_arr);
+	};
+
+	class ScriptStackDump {
+	public:
+		List<ScriptLanguage::StackInfo> frames;
+		ScriptStackDump() {}
+
+		Array serialize();
+		bool deserialize(const Array &p_arr);
+	};
+
+	class Message {
+
+	public:
+		String message;
+		Array data;
+
+		Message() {}
+	};
+
+	class OutputError {
+	public:
 		int hr;
 		int min;
 		int sec;
@@ -83,23 +132,122 @@ class ScriptDebuggerRemote : public ScriptDebugger {
 		String error;
 		String error_descr;
 		bool warning;
-		Array callstack;
+		Vector<ScriptLanguage::StackInfo> callstack;
+
+		OutputError() {
+			hr = -1;
+			min = -1;
+			sec = -1;
+			msec = -1;
+			source_line = -1;
+			warning = false;
+		}
+
+		Array serialize();
+		bool deserialize(const Array &p_arr);
 	};
+
+	struct FrameData {
+
+		StringName name;
+		Array data;
+	};
+
+	class ProfilerSignature {
+	public:
+		StringName name;
+		int id;
+
+		Array serialize();
+		bool deserialize(const Array &p_arr);
+
+		ProfilerSignature() {
+			id = -1;
+		};
+	};
+
+	class ProfilerFrame {
+	public:
+		int frame_number;
+		float frame_time;
+		float idle_time;
+		float physics_time;
+		float physics_frame_time;
+		float script_time;
+
+		Vector<FrameData> frames_data;
+		Vector<FrameFunction> frame_functions;
+
+		ProfilerFrame() {
+			frame_number = 0;
+			frame_time = 0;
+			idle_time = 0;
+			physics_time = 0;
+			physics_frame_time = 0;
+		}
+
+		Array serialize();
+		bool deserialize(const Array &p_arr);
+	};
+
+	class NetworkProfilerFrame {
+	public:
+		Vector<MultiplayerAPI::ProfilingInfo> infos;
+
+		Array serialize();
+		bool deserialize(const Array &p_arr);
+
+		NetworkProfilerFrame(){};
+	};
+
+protected:
+	struct ProfileInfoSort {
+
+		bool operator()(ScriptLanguage::ProfilingInfo *A, ScriptLanguage::ProfilingInfo *B) const {
+			return A->total_time < B->total_time;
+		}
+	};
+
+	Vector<ScriptLanguage::ProfilingInfo> profile_info;
+	Vector<ScriptLanguage::ProfilingInfo *> profile_info_ptrs;
+	Vector<MultiplayerAPI::ProfilingInfo> network_profile_info;
+
+	Map<StringName, int> profiler_function_signature_map;
+	float frame_time, idle_time, physics_time, physics_frame_time;
+
+	bool profiling;
+	bool visual_profiling;
+	bool network_profiling;
+	int max_frame_functions;
+	bool skip_profile_frame;
+	bool reload_all_scripts;
+
+	Ref<StreamPeerTCP> tcp_client;
+	Ref<PacketPeerStream> packet_peer_stream;
+
+	uint64_t last_perf_time;
+	uint64_t last_net_prof_time;
+	uint64_t last_net_bandwidth_time;
+	Object *performance;
+	bool requested_quit;
+	Mutex mutex;
 
 	List<String> output_strings;
 	List<Message> messages;
 	int max_messages_per_frame;
 	int n_messages_dropped;
 	List<OutputError> errors;
-	int max_errors_per_frame;
+	int max_errors_per_second;
+	int max_warnings_per_second;
 	int n_errors_dropped;
+	int n_warnings_dropped;
 
 	int max_cps;
 	int char_count;
+	int err_count;
+	int warn_count;
 	uint64_t last_msec;
 	uint64_t msec_count;
-
-	OS::ProcessID allow_focus_steal_pid;
 
 	bool locking; //hack to avoid a deadloop
 	static void _print_handler(void *p_this, const String &p_string, bool p_error);
@@ -110,51 +258,37 @@ class ScriptDebuggerRemote : public ScriptDebugger {
 	void _poll_events();
 	uint32_t poll_every;
 
-	bool _parse_live_edit(const Array &p_command);
-
-	RequestSceneTreeMessageFunc request_scene_tree;
-	void *request_scene_tree_ud;
+	void _parse_message(const String p_command, const Array &p_data, ScriptLanguage *p_script = NULL);
 
 	void _set_object_property(ObjectID p_id, const String &p_property, const Variant &p_value);
 
 	void _send_object_id(ObjectID p_id);
 	void _send_video_memory();
-	LiveEditFuncs *live_edit_funcs;
+
+	Ref<MultiplayerAPI> multiplayer;
 
 	ErrorHandlerList eh;
 	static void _err_handler(void *, const char *, const char *, int p_line, const char *, const char *, ErrorHandlerType p_type);
 
+	void _put_msg(String p_message, Array p_data);
 	void _send_profiling_data(bool p_for_frame);
-
-	struct FrameData {
-
-		StringName name;
-		Array data;
-	};
+	void _send_network_profiling_data();
+	void _send_network_bandwidth_usage();
 
 	Vector<FrameData> profile_frame_data;
 
-	void _put_variable(const String &p_name, const Variant &p_variable);
-
-	void _save_node(ObjectID id, const String &p_path);
+	bool skip_breakpoints;
 
 public:
-	struct ResourceUsage {
-
-		String path;
-		String format;
-		String type;
-		RID id;
-		int vram;
-		bool operator<(const ResourceUsage &p_img) const { return vram == p_img.vram ? id < p_img.id : vram > p_img.vram; }
-	};
-
-	typedef void (*ResourceUsageFunc)(List<ResourceUsage> *);
+	typedef void (*ResourceUsageFunc)(ResourceUsage *);
+	typedef Error (*ParseMessageFunc)(const String &p_name, const Array &p_msg); // Returns true if something was found (stopping propagation).
 
 	static ResourceUsageFunc resource_usage_func;
+	static ParseMessageFunc scene_tree_parse_func; // Could be made into list, extensible...
 
 	Error connect_to_host(const String &p_host, uint16_t p_port);
-	virtual void debug(ScriptLanguage *p_script, bool p_can_continue = true);
+	bool is_peer_connected();
+	virtual void debug(ScriptLanguage *p_script, bool p_can_continue = true, bool p_is_error_breakpoint = false);
 	virtual void idle_poll();
 	virtual void line_poll();
 
@@ -164,8 +298,7 @@ public:
 	virtual void send_message(const String &p_message, const Array &p_args);
 	virtual void send_error(const String &p_func, const String &p_file, int p_line, const String &p_err, const String &p_descr, ErrorHandlerType p_type, const Vector<ScriptLanguage::StackInfo> &p_stack_info);
 
-	virtual void set_request_scene_tree_message_func(RequestSceneTreeMessageFunc p_func, void *p_udata);
-	virtual void set_live_edit_funcs(LiveEditFuncs *p_funcs);
+	virtual void set_multiplayer(Ref<MultiplayerAPI> p_multiplayer);
 
 	virtual bool is_profiling() const;
 	virtual void add_profiling_frame_data(const StringName &p_name, const Array &p_data);
@@ -174,7 +307,7 @@ public:
 	virtual void profiling_end();
 	virtual void profiling_set_frame_times(float p_frame_time, float p_idle_time, float p_physics_time, float p_physics_frame_time);
 
-	void set_allow_focus_steal_pid(OS::ProcessID p_pid);
+	virtual void set_skip_breakpoints(bool p_skip_breakpoints);
 
 	ScriptDebuggerRemote();
 	~ScriptDebuggerRemote();

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -80,6 +80,7 @@ private:
 
 	bool flags[FLAG_MAX];
 	AlphaCutMode alpha_cut;
+	StandardMaterial3D::BillboardMode billboard_mode;
 	bool pending_update;
 	void _im_update();
 
@@ -130,11 +131,13 @@ public:
 
 	void set_alpha_cut_mode(AlphaCutMode p_mode);
 	AlphaCutMode get_alpha_cut_mode() const;
+	void set_billboard_mode(StandardMaterial3D::BillboardMode p_mode);
+	StandardMaterial3D::BillboardMode get_billboard_mode() const;
 
 	virtual Rect2 get_item_rect() const = 0;
 
 	virtual AABB get_aabb() const;
-	virtual PoolVector<Face3> get_faces(uint32_t p_usage_flags) const;
+	virtual Vector<Face3> get_faces(uint32_t p_usage_flags) const;
 	Ref<TriangleMesh> generate_triangle_mesh() const;
 
 	SpriteBase3D();
@@ -144,7 +147,7 @@ public:
 class Sprite3D : public SpriteBase3D {
 
 	GDCLASS(Sprite3D, SpriteBase3D);
-	Ref<Texture> texture;
+	Ref<Texture2D> texture;
 
 	bool region;
 	Rect2 region_rect;
@@ -154,6 +157,8 @@ class Sprite3D : public SpriteBase3D {
 	int vframes;
 	int hframes;
 
+	void _texture_changed();
+
 protected:
 	virtual void _draw();
 	static void _bind_methods();
@@ -161,8 +166,8 @@ protected:
 	virtual void _validate_property(PropertyInfo &property) const;
 
 public:
-	void set_texture(const Ref<Texture> &p_texture);
-	Ref<Texture> get_texture() const;
+	void set_texture(const Ref<Texture2D> &p_texture);
+	Ref<Texture2D> get_texture() const;
 
 	void set_region(bool p_region);
 	bool is_region() const;
@@ -172,6 +177,9 @@ public:
 
 	void set_frame(int p_frame);
 	int get_frame() const;
+
+	void set_frame_coords(const Vector2 &p_coord);
+	Vector2 get_frame_coords() const;
 
 	void set_vframes(int p_amount);
 	int get_vframes() const;

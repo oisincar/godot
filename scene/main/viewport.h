@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -36,31 +36,30 @@
 #include "scene/resources/texture.h"
 #include "scene/resources/world_2d.h"
 #include "servers/visual_server.h"
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
 
 class Camera;
 class Camera2D;
 class Listener;
 class Control;
 class CanvasItem;
+class CanvasLayer;
 class Panel;
 class Label;
 class Timer;
 class Viewport;
+class CollisionObject;
 
-class ViewportTexture : public Texture {
+class ViewportTexture : public Texture2D {
 
-	GDCLASS(ViewportTexture, Texture);
+	GDCLASS(ViewportTexture, Texture2D);
 
 	NodePath path;
 
 	friend class Viewport;
 	Viewport *vp;
-	uint32_t flags;
 
-	RID proxy;
+	mutable RID proxy_ph;
+	mutable RID proxy;
 
 protected:
 	static void _bind_methods();
@@ -77,9 +76,6 @@ public:
 	virtual RID get_rid() const;
 
 	virtual bool has_alpha() const;
-
-	virtual void set_flags(uint32_t p_flags);
-	virtual uint32_t get_flags() const;
 
 	virtual Ref<Image> get_data() const;
 
@@ -108,7 +104,6 @@ public:
 		SHADOW_ATLAS_QUADRANT_SUBDIV_256,
 		SHADOW_ATLAS_QUADRANT_SUBDIV_1024,
 		SHADOW_ATLAS_QUADRANT_SUBDIV_MAX,
-
 	};
 
 	enum MSAA {
@@ -117,13 +112,6 @@ public:
 		MSAA_4X,
 		MSAA_8X,
 		MSAA_16X,
-	};
-
-	enum Usage {
-		USAGE_2D,
-		USAGE_2D_NO_SAMPLING,
-		USAGE_3D,
-		USAGE_3D_NO_EFFECTS,
 	};
 
 	enum RenderInfo {
@@ -140,8 +128,18 @@ public:
 	enum DebugDraw {
 		DEBUG_DRAW_DISABLED,
 		DEBUG_DRAW_UNSHADED,
+		DEBUG_DRAW_LIGHTING,
 		DEBUG_DRAW_OVERDRAW,
 		DEBUG_DRAW_WIREFRAME,
+		DEBUG_DRAW_NORMAL_BUFFER,
+		DEBUG_DRAW_GI_PROBE_ALBEDO,
+		DEBUG_DRAW_GI_PROBE_LIGHTING,
+		DEBUG_DRAW_GI_PROBE_EMISSION,
+		DEBUG_DRAW_SHADOW_ATLAS,
+		DEBUG_DRAW_DIRECTIONAL_SHADOW_ATLAS,
+		DEBUG_DRAW_SCENE_LUMINANCE,
+		DEBUG_DRAW_SSAO,
+		DEBUG_DRAW_ROUGHNESS_LIMITER
 	};
 
 	enum ClearMode {
@@ -149,6 +147,21 @@ public:
 		CLEAR_MODE_ALWAYS,
 		CLEAR_MODE_NEVER,
 		CLEAR_MODE_ONLY_NEXT_FRAME
+	};
+
+	enum DefaultCanvasItemTextureFilter {
+		DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST,
+		DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_LINEAR,
+		DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS,
+		DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST_WITH_MIPMAPS,
+		DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_MAX
+	};
+
+	enum DefaultCanvasItemTextureRepeat {
+		DEFAULT_CANVAS_ITEM_TEXTURE_REPEAT_DISABLED,
+		DEFAULT_CANVAS_ITEM_TEXTURE_REPEAT_ENABLED,
+		DEFAULT_CANVAS_ITEM_TEXTURE_REPEAT_MIRROR,
+		DEFAULT_CANVAS_ITEM_TEXTURE_REPEAT_MAX,
 	};
 
 private:
@@ -161,8 +174,27 @@ private:
 
 	bool arvr;
 
+	struct CameraOverrideData {
+		Transform transform;
+		enum Projection {
+			PROJECTION_PERSPECTIVE,
+			PROJECTION_ORTHOGONAL
+		};
+		Projection projection;
+		float fov;
+		float size;
+		float z_near;
+		float z_far;
+		RID rid;
+
+		operator bool() const {
+			return rid != RID();
+		}
+	} camera_override;
+
 	Camera *camera;
 	Set<Camera *> cameras;
+	Set<CanvasLayer *> canvas_layers;
 
 	RID viewport;
 	RID current_canvas;
@@ -173,12 +205,16 @@ private:
 	bool audio_listener_2d;
 	RID internal_listener_2d;
 
+	bool override_canvas_transform;
+
+	Transform2D canvas_transform_override;
 	Transform2D canvas_transform;
 	Transform2D global_canvas_transform;
 	Transform2D stretch_transform;
 
 	Size2 size;
 	Rect2 to_screen_rect;
+	bool render_direct_to_screen;
 
 	RID contact_2d_debug;
 	RID contact_3d_debug_multimesh;
@@ -192,7 +228,6 @@ private:
 	Rect2 last_vp_rect;
 
 	bool transparent_bg;
-	bool vflip;
 	ClearMode clear_mode;
 	bool filter;
 	bool gen_mipmaps;
@@ -203,8 +238,26 @@ private:
 	List<Ref<InputEvent> > physics_picking_events;
 	ObjectID physics_object_capture;
 	ObjectID physics_object_over;
+	Transform physics_last_object_transform;
+	Transform physics_last_camera_transform;
+	ObjectID physics_last_id;
+	bool physics_has_last_mousepos;
 	Vector2 physics_last_mousepos;
-	void _test_new_mouseover(ObjectID new_collider);
+	struct {
+
+		bool alt;
+		bool control;
+		bool shift;
+		bool meta;
+		int mouse_mask;
+
+	} physics_last_mouse_state;
+
+	void _collision_object_input_event(CollisionObject *p_object, Camera *p_camera, const Ref<InputEvent> &p_input_event, const Vector3 &p_pos, const Vector3 &p_normal, int p_shape);
+
+	bool handle_input_locally;
+	bool local_input_handled;
+
 	Map<ObjectID, uint64_t> physics_2d_mouseover;
 
 	Ref<World2D> world_2d;
@@ -226,22 +279,15 @@ private:
 	void _update_stretch_transform();
 	void _update_global_transform();
 
-	bool disable_3d;
-	bool keep_3d_linear;
 	UpdateMode update_mode;
 	RID texture_rid;
-	uint32_t texture_flags;
 
 	DebugDraw debug_draw;
-
-	Usage usage;
 
 	int shadow_atlas_size;
 	ShadowAtlasQuadrantSubdiv shadow_atlas_quadrant_subdiv[4];
 
 	MSAA msaa;
-	bool hdr;
-
 	Ref<ViewportTexture> default_texture;
 	Set<ViewportTexture *> viewport_textures;
 
@@ -250,8 +296,9 @@ private:
 
 		bool key_event_accepted;
 		Control *mouse_focus;
+		Control *last_mouse_focus;
 		Control *mouse_click_grabber;
-		int mouse_focus_button;
+		int mouse_focus_mask;
 		Control *key_focus;
 		Control *mouse_over;
 		Control *tooltip;
@@ -279,9 +326,17 @@ private:
 		GUI();
 	} gui;
 
+	DefaultCanvasItemTextureFilter default_canvas_item_texture_filter;
+	DefaultCanvasItemTextureRepeat default_canvas_item_texture_repeat;
+
+	void _propagate_update_default_filter(Node *p_node);
+	void _propagate_update_default_repeat(Node *p_node);
+
 	bool disable_input;
 
 	void _gui_call_input(Control *p_control, const Ref<InputEvent> &p_input);
+	void _gui_call_notification(Control *p_control, int p_what);
+
 	void _gui_prepare_subwindows();
 	void _gui_sort_subwindows();
 	void _gui_sort_roots();
@@ -354,13 +409,34 @@ private:
 	void _camera_remove(Camera *p_camera);
 	void _camera_make_next_current(Camera *p_exclude);
 
+	friend class CanvasLayer;
+	void _canvas_layer_add(CanvasLayer *p_canvas_layer);
+	void _canvas_layer_remove(CanvasLayer *p_canvas_layer);
+
+	void _drop_mouse_focus();
+	void _drop_physics_mouseover();
+
+	void _update_canvas_items(Node *p_node);
+
+	void _own_world_changed();
+
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
+	virtual void _validate_property(PropertyInfo &property) const;
 
 public:
 	Listener *get_listener() const;
 	Camera *get_camera() const;
+
+	void enable_camera_override(bool p_enable);
+	bool is_camera_override_enabled() const;
+
+	void set_camera_override_transform(const Transform &p_transform);
+	Transform get_camera_override_transform() const;
+
+	void set_camera_override_perspective(float p_fovy_degrees, float p_z_near, float p_z_far);
+	void set_camera_override_orthogonal(float p_size, float p_z_near, float p_z_far);
 
 	void set_use_arvr(bool p_use_arvr);
 	bool use_arvr();
@@ -372,6 +448,7 @@ public:
 	bool is_audio_listener_2d() const;
 
 	void set_size(const Size2 &p_size);
+	void update_canvas_items();
 
 	Size2 get_size() const;
 	Rect2 get_visible_rect() const;
@@ -384,6 +461,12 @@ public:
 
 	Ref<World2D> get_world_2d() const;
 	Ref<World2D> find_world_2d() const;
+
+	void enable_canvas_transform_override(bool p_enable);
+	bool is_canvas_transform_override_enbled() const;
+
+	void set_canvas_transform_override(const Transform2D &p_transform);
+	Transform2D get_canvas_transform_override() const;
 
 	void set_canvas_transform(const Transform2D &p_transform);
 	Transform2D get_canvas_transform() const;
@@ -403,9 +486,6 @@ public:
 	void set_size_override_stretch(bool p_enable);
 	bool is_size_override_stretch_enabled() const;
 
-	void set_vflip(bool p_enable);
-	bool get_vflip() const;
-
 	void set_clear_mode(ClearMode p_mode);
 	ClearMode get_clear_mode() const;
 
@@ -422,9 +502,6 @@ public:
 	void set_msaa(MSAA p_msaa);
 	MSAA get_msaa() const;
 
-	void set_hdr(bool p_hdr);
-	bool get_hdr() const;
-
 	Vector2 get_camera_coords(const Vector2 &p_viewport_coords) const;
 	Vector2 get_camera_rect_size() const;
 
@@ -437,14 +514,11 @@ public:
 	void set_disable_input(bool p_disable);
 	bool is_input_disabled() const;
 
-	void set_disable_3d(bool p_disable);
-	bool is_3d_disabled() const;
-
-	void set_keep_3d_linear(bool p_keep_3d_linear);
-	bool get_keep_3d_linear() const;
-
 	void set_attach_to_screen_rect(const Rect2 &p_rect);
 	Rect2 get_attach_to_screen_rect() const;
+
+	void set_use_render_direct_to_screen(bool p_render_direct_to_screen);
+	bool is_using_render_direct_to_screen() const;
 
 	Vector2 get_mouse_position() const;
 	void warp_mouse(const Vector2 &p_pos);
@@ -462,9 +536,6 @@ public:
 
 	virtual String get_configuration_warning() const;
 
-	void set_usage(Usage p_usage);
-	Usage get_usage() const;
-
 	void set_debug_draw(DebugDraw p_debug_draw);
 	DebugDraw get_debug_draw() const;
 
@@ -475,7 +546,19 @@ public:
 
 	void _subwindow_visibility_changed();
 
+	void set_input_as_handled();
+	bool is_input_handled() const;
+
+	void set_handle_input_locally(bool p_enable);
+	bool is_handling_input_locally() const;
+
 	bool gui_is_dragging() const;
+
+	void set_default_canvas_item_texture_filter(DefaultCanvasItemTextureFilter p_filter);
+	DefaultCanvasItemTextureFilter get_default_canvas_item_texture_filter() const;
+
+	void set_default_canvas_item_texture_repeat(DefaultCanvasItemTextureRepeat p_repeat);
+	DefaultCanvasItemTextureRepeat get_default_canvas_item_texture_repeat() const;
 
 	Viewport();
 	~Viewport();
@@ -484,9 +567,10 @@ public:
 VARIANT_ENUM_CAST(Viewport::UpdateMode);
 VARIANT_ENUM_CAST(Viewport::ShadowAtlasQuadrantSubdiv);
 VARIANT_ENUM_CAST(Viewport::MSAA);
-VARIANT_ENUM_CAST(Viewport::Usage);
 VARIANT_ENUM_CAST(Viewport::DebugDraw);
 VARIANT_ENUM_CAST(Viewport::ClearMode);
 VARIANT_ENUM_CAST(Viewport::RenderInfo);
+VARIANT_ENUM_CAST(Viewport::DefaultCanvasItemTextureFilter);
+VARIANT_ENUM_CAST(Viewport::DefaultCanvasItemTextureRepeat);
 
 #endif

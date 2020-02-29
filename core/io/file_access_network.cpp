@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -42,14 +42,14 @@
 
 void FileAccessNetworkClient::lock_mutex() {
 
-	mutex->lock();
+	mutex.lock();
 	lockcount++;
 }
 
 void FileAccessNetworkClient::unlock_mutex() {
 
 	lockcount--;
-	mutex->unlock();
+	mutex.unlock();
 }
 
 void FileAccessNetworkClient::put_32(int p_32) {
@@ -97,15 +97,16 @@ void FileAccessNetworkClient::_thread_func() {
 		lock_mutex();
 		DEBUG_PRINT("MUTEX PASS");
 
-		blockrequest_mutex->lock();
-		while (block_requests.size()) {
-			put_32(block_requests.front()->get().id);
-			put_32(FileAccessNetwork::COMMAND_READ_BLOCK);
-			put_64(block_requests.front()->get().offset);
-			put_32(block_requests.front()->get().size);
-			block_requests.pop_front();
+		{
+			MutexLock lock(blockrequest_mutex);
+			while (block_requests.size()) {
+				put_32(block_requests.front()->get().id);
+				put_32(FileAccessNetwork::COMMAND_READ_BLOCK);
+				put_64(block_requests.front()->get().offset);
+				put_32(block_requests.front()->get().size);
+				block_requests.pop_front();
+			}
 		}
-		blockrequest_mutex->unlock();
 
 		DEBUG_PRINT("THREAD ITER");
 
@@ -118,7 +119,10 @@ void FileAccessNetworkClient::_thread_func() {
 		FileAccessNetwork *fa = NULL;
 
 		if (response != FileAccessNetwork::RESPONSE_DATA) {
-			ERR_FAIL_COND(!accesses.has(id));
+			if (!accesses.has(id)) {
+				unlock_mutex();
+				ERR_FAIL_COND(!accesses.has(id));
+			}
 		}
 
 		if (accesses.has(id))
@@ -192,7 +196,7 @@ Error FileAccessNetworkClient::connect(const String &p_host, int p_port, const S
 
 	DEBUG_PRINT("IP: " + String(ip) + " port " + itos(p_port));
 	Error err = client->connect_to_host(ip, p_port);
-	ERR_FAIL_COND_V(err, err);
+	ERR_FAIL_COND_V_MSG(err != OK, err, "Cannot connect to host with IP: " + String(ip) + " and port: " + itos(p_port));
 	while (client->get_status() == StreamPeerTCP::STATUS_CONNECTING) {
 		//DEBUG_PRINT("trying to connect....");
 		OS::get_singleton()->delay_usec(1000);
@@ -222,13 +226,11 @@ FileAccessNetworkClient *FileAccessNetworkClient::singleton = NULL;
 FileAccessNetworkClient::FileAccessNetworkClient() {
 
 	thread = NULL;
-	mutex = Mutex::create();
-	blockrequest_mutex = Mutex::create();
 	quit = false;
 	singleton = this;
 	last_id = 0;
 	client.instance();
-	sem = Semaphore::create();
+	sem = SemaphoreOld::create();
 	lockcount = 0;
 }
 
@@ -241,8 +243,6 @@ FileAccessNetworkClient::~FileAccessNetworkClient() {
 		memdelete(thread);
 	}
 
-	memdelete(blockrequest_mutex);
-	memdelete(mutex);
 	memdelete(sem);
 }
 
@@ -256,10 +256,11 @@ void FileAccessNetwork::_set_block(int p_offset, const Vector<uint8_t> &p_block)
 		ERR_FAIL_COND((p_block.size() != (int)(total_size % page_size)));
 	}
 
-	buffer_mutex->lock();
-	pages.write[page].buffer = p_block;
-	pages.write[page].queued = false;
-	buffer_mutex->unlock();
+	{
+		MutexLock lock(buffer_mutex);
+		pages.write[page].buffer = p_block;
+		pages.write[page].queued = false;
+	}
 
 	if (waiting_on_page == page) {
 		waiting_on_page = -1;
@@ -336,7 +337,7 @@ bool FileAccessNetwork::is_open() const {
 
 void FileAccessNetwork::seek(size_t p_position) {
 
-	ERR_FAIL_COND(!opened);
+	ERR_FAIL_COND_MSG(!opened, "File must be opened before use.");
 	eof_flag = p_position > total_size;
 
 	if (p_position >= total_size) {
@@ -352,18 +353,18 @@ void FileAccessNetwork::seek_end(int64_t p_position) {
 }
 size_t FileAccessNetwork::get_position() const {
 
-	ERR_FAIL_COND_V(!opened, 0);
+	ERR_FAIL_COND_V_MSG(!opened, 0, "File must be opened before use.");
 	return pos;
 }
 size_t FileAccessNetwork::get_len() const {
 
-	ERR_FAIL_COND_V(!opened, 0);
+	ERR_FAIL_COND_V_MSG(!opened, 0, "File must be opened before use.");
 	return total_size;
 }
 
 bool FileAccessNetwork::eof_reached() const {
 
-	ERR_FAIL_COND_V(!opened, false);
+	ERR_FAIL_COND_V_MSG(!opened, false, "File must be opened before use.");
 	return eof_flag;
 }
 
@@ -381,15 +382,16 @@ void FileAccessNetwork::_queue_page(int p_page) const {
 	if (pages[p_page].buffer.empty() && !pages[p_page].queued) {
 
 		FileAccessNetworkClient *nc = FileAccessNetworkClient::singleton;
+		{
+			MutexLock lock(nc->blockrequest_mutex);
 
-		nc->blockrequest_mutex->lock();
-		FileAccessNetworkClient::BlockRequest br;
-		br.id = id;
-		br.offset = size_t(p_page) * page_size;
-		br.size = page_size;
-		nc->block_requests.push_back(br);
-		pages.write[p_page].queued = true;
-		nc->blockrequest_mutex->unlock();
+			FileAccessNetworkClient::BlockRequest br;
+			br.id = id;
+			br.offset = size_t(p_page) * page_size;
+			br.size = page_size;
+			nc->block_requests.push_back(br);
+			pages.write[p_page].queued = true;
+		}
 		DEBUG_PRINT("QUEUE PAGE POST");
 		nc->sem->post();
 		DEBUG_PRINT("queued " + itos(p_page));
@@ -415,14 +417,14 @@ int FileAccessNetwork::get_buffer(uint8_t *p_dst, int p_length) const {
 		int page = pos / page_size;
 
 		if (page != last_page) {
-			buffer_mutex->lock();
+			buffer_mutex.lock();
 			if (pages[page].buffer.empty()) {
 				waiting_on_page = page;
 				for (int j = 0; j < read_ahead; j++) {
 
 					_queue_page(page + j);
 				}
-				buffer_mutex->unlock();
+				buffer_mutex.unlock();
 				DEBUG_PRINT("wait");
 				page_sem->wait();
 				DEBUG_PRINT("done");
@@ -432,9 +434,8 @@ int FileAccessNetwork::get_buffer(uint8_t *p_dst, int p_length) const {
 
 					_queue_page(page + j);
 				}
-				buff = pages.write[page].buffer.ptrw();
 				//queue pages
-				buffer_mutex->unlock();
+				buffer_mutex.unlock();
 			}
 
 			buff = pages.write[page].buffer.ptrw();
@@ -497,6 +498,16 @@ uint64_t FileAccessNetwork::_get_modified_time(const String &p_file) {
 	return exists_modtime;
 }
 
+uint32_t FileAccessNetwork::_get_unix_permissions(const String &p_file) {
+	ERR_PRINT("Getting UNIX permissions from network drives is not implemented yet");
+	return 0;
+}
+
+Error FileAccessNetwork::_set_unix_permissions(const String &p_file, uint32_t p_permissions) {
+	ERR_PRINT("Setting UNIX permissions on network drives is not implemented yet");
+	return ERR_UNAVAILABLE;
+}
+
 void FileAccessNetwork::configure() {
 
 	GLOBAL_DEF("network/remote_fs/page_size", 65536);
@@ -510,9 +521,8 @@ FileAccessNetwork::FileAccessNetwork() {
 	eof_flag = false;
 	opened = false;
 	pos = 0;
-	sem = Semaphore::create();
-	page_sem = Semaphore::create();
-	buffer_mutex = Mutex::create();
+	sem = SemaphoreOld::create();
+	page_sem = SemaphoreOld::create();
 	FileAccessNetworkClient *nc = FileAccessNetworkClient::singleton;
 	nc->lock_mutex();
 	id = nc->last_id++;
@@ -530,7 +540,6 @@ FileAccessNetwork::~FileAccessNetwork() {
 	close();
 	memdelete(sem);
 	memdelete(page_sem);
-	memdelete(buffer_mutex);
 
 	FileAccessNetworkClient *nc = FileAccessNetworkClient::singleton;
 	nc->lock_mutex();

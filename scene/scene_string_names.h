@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,7 +32,8 @@
 #define SCENE_STRING_NAMES_H
 
 #include "core/node_path.h"
-#include "core/string_db.h"
+#include "core/string_name.h"
+
 class SceneStringNames {
 
 	friend void register_scene_types();
@@ -147,12 +148,6 @@ public:
 	StringName camera_entered;
 	StringName camera_exited;
 
-	StringName _body_enter_tree;
-	StringName _body_exit_tree;
-
-	StringName _area_enter_tree;
-	StringName _area_exit_tree;
-
 	StringName changed;
 	StringName _shader_changed;
 
@@ -179,7 +174,6 @@ public:
 	StringName _get_minimum_size;
 
 	StringName _im_update;
-	StringName _queue_update;
 
 	StringName baked_light_changed;
 	StringName _baked_light_changed;
@@ -205,11 +199,12 @@ public:
 
 	StringName parameters_base_path;
 
+	StringName tracks_changed;
+
 	enum {
 		MAX_MATERIALS = 32
 	};
 	StringName mesh_materials[MAX_MATERIALS];
-	StringName _mesh_changed;
 };
 
 #endif // SCENE_STRING_NAMES_H

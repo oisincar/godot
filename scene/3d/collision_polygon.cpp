@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -44,7 +44,7 @@ void CollisionPolygon::_build_polygon() {
 	if (polygon.size() == 0)
 		return;
 
-	Vector<Vector<Vector2> > decomp = Geometry::decompose_polygon(polygon);
+	Vector<Vector<Vector2> > decomp = Geometry::decompose_polygon_in_convex(polygon);
 	if (decomp.size() == 0)
 		return;
 
@@ -53,11 +53,11 @@ void CollisionPolygon::_build_polygon() {
 
 	for (int i = 0; i < decomp.size(); i++) {
 		Ref<ConvexPolygonShape> convex = memnew(ConvexPolygonShape);
-		PoolVector<Vector3> cp;
+		Vector<Vector3> cp;
 		int cs = decomp[i].size();
 		cp.resize(cs * 2);
 		{
-			PoolVector<Vector3>::Write w = cp.write();
+			Vector3 *w = cp.ptrw();
 			int idx = 0;
 			for (int j = 0; j < cs; j++) {
 
@@ -151,6 +151,8 @@ float CollisionPolygon::get_depth() const {
 
 void CollisionPolygon::set_disabled(bool p_disabled) {
 	disabled = p_disabled;
+	update_gizmo();
+
 	if (parent) {
 		parent->shape_owner_set_disabled(owner_id, p_disabled);
 	}
@@ -189,9 +191,9 @@ void CollisionPolygon::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_is_editable_3d_polygon"), &CollisionPolygon::_is_editable_3d_polygon);
 
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "depth"), "set_depth", "get_depth");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "depth"), "set_depth", "get_depth");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "disabled"), "set_disabled", "is_disabled");
-	ADD_PROPERTY(PropertyInfo(Variant::POOL_VECTOR2_ARRAY, "polygon"), "set_polygon", "get_polygon");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_VECTOR2_ARRAY, "polygon"), "set_polygon", "get_polygon");
 }
 
 CollisionPolygon::CollisionPolygon() {

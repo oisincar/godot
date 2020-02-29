@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -41,12 +41,12 @@ class SoftBodyVisualServerHandler {
 
 	RID mesh;
 	int surface;
-	PoolVector<uint8_t> buffer;
+	Vector<uint8_t> buffer;
 	uint32_t stride;
 	uint32_t offset_vertices;
 	uint32_t offset_normal;
 
-	PoolVector<uint8_t>::Write write_buffer;
+	uint8_t *write_buffer;
 
 private:
 	SoftBodyVisualServerHandler();
@@ -75,6 +75,7 @@ public:
 
 		PinnedPoint();
 		PinnedPoint(const PinnedPoint &obj_tocopy);
+		PinnedPoint operator=(const PinnedPoint &obj);
 	};
 
 private:
@@ -86,7 +87,7 @@ private:
 	uint32_t collision_mask;
 	uint32_t collision_layer;
 	NodePath parent_collision_ignore;
-	PoolVector<PinnedPoint> pinned_points;
+	Vector<PinnedPoint> pinned_points;
 	bool simulation_started;
 	bool pinned_points_cache_dirty;
 
@@ -115,10 +116,11 @@ protected:
 	virtual String get_configuration_warning() const;
 
 protected:
+	void _update_physics_server();
 	void _draw_soft_mesh();
 
 public:
-	void update_physics_server();
+	void prepare_physics_server();
 	void become_mesh_owner();
 
 	void set_collision_mask(uint32_t p_mask);
@@ -136,8 +138,8 @@ public:
 	void set_parent_collision_ignore(const NodePath &p_parent_collision_ignore);
 	const NodePath &get_parent_collision_ignore() const;
 
-	void set_pinned_points_indices(PoolVector<PinnedPoint> p_pinned_points_indices);
-	PoolVector<PinnedPoint> get_pinned_points_indices();
+	void set_pinned_points_indices(Vector<PinnedPoint> p_pinned_points_indices);
+	Vector<PinnedPoint> get_pinned_points_indices();
 
 	void set_simulation_precision(int p_simulation_precision);
 	int get_simulation_precision();

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -36,7 +36,7 @@
 #include "core/reference.h"
 #include "core/script_language.h"
 #include "core/self_list.h"
-#include "core/string_db.h"
+#include "core/string_name.h"
 #include "core/variant.h"
 
 class GDScriptInstance;
@@ -45,10 +45,11 @@ class GDScript;
 struct GDScriptDataType {
 	bool has_type;
 	enum {
+		UNINITIALIZED,
 		BUILTIN,
 		NATIVE,
 		SCRIPT,
-		GDSCRIPT
+		GDSCRIPT,
 	} kind;
 	Variant::Type builtin_type;
 	StringName native_type;
@@ -58,6 +59,8 @@ struct GDScriptDataType {
 		if (!has_type) return true; // Can't type check
 
 		switch (kind) {
+			case UNINITIALIZED:
+				break;
 			case BUILTIN: {
 				Variant::Type var_type = p_variant.get_type();
 				bool valid = builtin_type == var_type;
@@ -73,9 +76,18 @@ struct GDScriptDataType {
 				if (p_variant.get_type() != Variant::OBJECT) {
 					return false;
 				}
-				Object *obj = p_variant.operator Object *();
-				if (obj && !ClassDB::is_parent_class(obj->get_class_name(), native_type)) {
+
+				Object *obj = p_variant.get_validated_object();
+				if (!obj) {
 					return false;
+				}
+
+				if (!ClassDB::is_parent_class(obj->get_class_name(), native_type)) {
+					// Try with underscore prefix
+					StringName underscore_native_type = "_" + native_type;
+					if (!ClassDB::is_parent_class(obj->get_class_name(), underscore_native_type)) {
+						return false;
+					}
 				}
 				return true;
 			} break;
@@ -87,7 +99,12 @@ struct GDScriptDataType {
 				if (p_variant.get_type() != Variant::OBJECT) {
 					return false;
 				}
-				Object *obj = p_variant.operator Object *();
+
+				Object *obj = p_variant.get_validated_object();
+				if (!obj) {
+					return false;
+				}
+
 				Ref<Script> base = obj && obj->get_script_instance() ? obj->get_script_instance()->get_script() : NULL;
 				bool valid = false;
 				while (base.is_valid()) {
@@ -107,6 +124,8 @@ struct GDScriptDataType {
 		PropertyInfo info;
 		if (has_type) {
 			switch (kind) {
+				case UNINITIALIZED:
+					break;
 				case BUILTIN: {
 					info.type = builtin_type;
 				} break;
@@ -128,7 +147,9 @@ struct GDScriptDataType {
 	}
 
 	GDScriptDataType() :
-			has_type(false) {}
+			has_type(false),
+			kind(UNINITIALIZED),
+			builtin_type(Variant::NIL) {}
 };
 
 class GDScriptFunction {
@@ -225,7 +246,7 @@ private:
 	bool _static;
 	MultiplayerAPI::RPCMode rpc_mode;
 
-	Ref<GDScript> _script;
+	GDScript *_script;
 
 	StringName name;
 	Vector<Variant> constants;
@@ -244,8 +265,8 @@ private:
 
 	List<StackDebug> stack_debug;
 
-	_FORCE_INLINE_ Variant *_get_variant(int p_address, GDScriptInstance *p_instance, GDScript *p_script, Variant &self, Variant *p_stack, String &r_error) const;
-	_FORCE_INLINE_ String _get_call_error(const Variant::CallError &p_err, const String &p_where, const Variant **argptrs) const;
+	_FORCE_INLINE_ Variant *_get_variant(int p_address, GDScriptInstance *p_instance, GDScript *p_script, Variant &self, Variant &static_ref, Variant *p_stack, String &r_error) const;
+	_FORCE_INLINE_ String _get_call_error(const Callable::CallError &p_err, const String &p_where, const Variant **argptrs) const;
 
 	friend class GDScriptLanguage;
 
@@ -297,7 +318,7 @@ public:
 	int get_default_argument_addr(int p_idx) const;
 	GDScriptDataType get_return_type() const;
 	GDScriptDataType get_argument_type(int p_idx) const;
-	GDScript *get_script() const { return const_cast<GDScript *>(_script.ptr()); }
+	GDScript *get_script() const { return _script; }
 	StringName get_source() const { return source; }
 
 	void debug_get_stack_member_state(int p_line, List<Pair<StringName, int> > *r_stackvars) const;
@@ -318,7 +339,7 @@ public:
 		return default_arguments[p_idx];
 	}
 
-	Variant call(GDScriptInstance *p_instance, const Variant **p_args, int p_argcount, Variant::CallError &r_err, CallState *p_state = NULL);
+	Variant call(GDScriptInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = NULL);
 
 	_FORCE_INLINE_ MultiplayerAPI::RPCMode get_rpc_mode() const { return rpc_mode; }
 	GDScriptFunction();
@@ -331,7 +352,7 @@ class GDScriptFunctionState : public Reference {
 	friend class GDScriptFunction;
 	GDScriptFunction *function;
 	GDScriptFunction::CallState state;
-	Variant _signal_callback(const Variant **p_args, int p_argcount, Variant::CallError &r_error);
+	Variant _signal_callback(const Variant **p_args, int p_argcount, Callable::CallError &r_error);
 	Ref<GDScriptFunctionState> first_state;
 
 protected:

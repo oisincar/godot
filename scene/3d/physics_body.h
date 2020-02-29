@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -49,7 +49,6 @@ class PhysicsBody : public CollisionObject {
 
 protected:
 	static void _bind_methods();
-	void _notification(int p_what);
 	PhysicsBody(PhysicsServer::BodyMode p_mode);
 
 public:
@@ -89,14 +88,6 @@ protected:
 	static void _bind_methods();
 
 public:
-#ifndef DISABLE_DEPRECATED
-	void set_friction(real_t p_friction);
-	real_t get_friction() const;
-
-	void set_bounce(real_t p_bounce);
-	real_t get_bounce() const;
-#endif
-
 	void set_physics_material_override(const Ref<PhysicsMaterial> &p_physics_material_override);
 	Ref<PhysicsMaterial> get_physics_material_override() const;
 
@@ -162,6 +153,7 @@ protected:
 		ShapePair(int p_bs, int p_ls) {
 			body_shape = p_bs;
 			local_shape = p_ls;
+			tagged = false;
 		}
 	};
 	struct RigidBody_RemoveAction {
@@ -203,14 +195,6 @@ public:
 
 	void set_weight(real_t p_weight);
 	real_t get_weight() const;
-
-#ifndef DISABLE_DEPRECATED
-	void set_friction(real_t p_friction);
-	real_t get_friction() const;
-
-	void set_bounce(real_t p_bounce);
-	real_t get_bounce() const;
-#endif
 
 	void set_physics_material_override(const Ref<PhysicsMaterial> &p_physics_material_override);
 	Ref<PhysicsMaterial> get_physics_material_override() const;
@@ -295,10 +279,14 @@ public:
 	};
 
 private:
+	Vector3 linear_velocity;
+	Vector3 angular_velocity;
+
 	uint16_t locked_axis;
 
 	float margin;
 
+	Vector3 floor_normal;
 	Vector3 floor_velocity;
 	RID on_floor_body;
 	bool on_floor;
@@ -310,14 +298,20 @@ private:
 
 	_FORCE_INLINE_ bool _ignores_mode(PhysicsServer::BodyMode) const;
 
-	Ref<KinematicCollision> _move(const Vector3 &p_motion, bool p_infinite_inertia = true, bool p_test_only = false);
+	Ref<KinematicCollision> _move(const Vector3 &p_motion, bool p_infinite_inertia = true, bool p_exclude_raycast_shapes = true, bool p_test_only = false);
 	Ref<KinematicCollision> _get_slide_collision(int p_bounce);
 
 protected:
+	void _notification(int p_what);
 	static void _bind_methods();
 
+	virtual void _direct_state_changed(Object *p_state);
+
 public:
-	bool move_and_collide(const Vector3 &p_motion, bool p_infinite_inertia, Collision &r_collisionz, bool p_test_only = false);
+	virtual Vector3 get_linear_velocity() const;
+	virtual Vector3 get_angular_velocity() const;
+
+	bool move_and_collide(const Vector3 &p_motion, bool p_infinite_inertia, Collision &r_collision, bool p_exclude_raycast_shapes = true, bool p_test_only = false);
 	bool test_move(const Transform &p_from, const Vector3 &p_motion, bool p_infinite_inertia);
 
 	bool separate_raycast_shapes(bool p_infinite_inertia, Collision &r_collision);
@@ -328,11 +322,12 @@ public:
 	void set_safe_margin(float p_margin);
 	float get_safe_margin() const;
 
-	Vector3 move_and_slide(const Vector3 &p_linear_velocity, const Vector3 &p_floor_direction = Vector3(0, 0, 0), bool p_stop_on_slope = false, int p_max_slides = 4, float p_floor_max_angle = Math::deg2rad((float)45), bool p_infinite_inertia = true);
-	Vector3 move_and_slide_with_snap(const Vector3 &p_linear_velocity, const Vector3 &p_snap, const Vector3 &p_floor_direction = Vector3(0, 0, 0), bool p_infinite_inertia = true, bool p_stop_on_slope = false, int p_max_slides = 4, float p_floor_max_angle = Math::deg2rad((float)45));
+	Vector3 move_and_slide(const Vector3 &p_linear_velocity, const Vector3 &p_up_direction = Vector3(0, 0, 0), bool p_stop_on_slope = false, int p_max_slides = 4, float p_floor_max_angle = Math::deg2rad((float)45), bool p_infinite_inertia = true);
+	Vector3 move_and_slide_with_snap(const Vector3 &p_linear_velocity, const Vector3 &p_snap, const Vector3 &p_up_direction = Vector3(0, 0, 0), bool p_stop_on_slope = false, int p_max_slides = 4, float p_floor_max_angle = Math::deg2rad((float)45), bool p_infinite_inertia = true);
 	bool is_on_floor() const;
 	bool is_on_wall() const;
 	bool is_on_ceiling() const;
+	Vector3 get_floor_normal() const;
 	Vector3 get_floor_velocity() const;
 
 	int get_slide_count() const;
@@ -493,6 +488,10 @@ public:
 			real_t linear_limit_softness;
 			real_t linear_restitution;
 			real_t linear_damping;
+			bool linear_spring_enabled;
+			real_t linear_spring_stiffness;
+			real_t linear_spring_damping;
+			real_t linear_equilibrium_point;
 			bool angular_limit_enabled;
 			real_t angular_limit_upper;
 			real_t angular_limit_lower;
@@ -500,6 +499,10 @@ public:
 			real_t angular_restitution;
 			real_t angular_damping;
 			real_t erp;
+			bool angular_spring_enabled;
+			real_t angular_spring_stiffness;
+			real_t angular_spring_damping;
+			real_t angular_equilibrium_point;
 
 			SixDOFAxisData() :
 					linear_limit_enabled(true),
@@ -508,13 +511,21 @@ public:
 					linear_limit_softness(0.7),
 					linear_restitution(0.5),
 					linear_damping(1.),
+					linear_spring_enabled(false),
+					linear_spring_stiffness(0),
+					linear_spring_damping(0),
+					linear_equilibrium_point(0),
 					angular_limit_enabled(true),
 					angular_limit_upper(0),
 					angular_limit_lower(0),
 					angular_limit_softness(0.5),
 					angular_restitution(0),
 					angular_damping(1.),
-					erp(0.5) {}
+					erp(0.5),
+					angular_spring_enabled(false),
+					angular_spring_stiffness(0),
+					angular_spring_damping(0.),
+					angular_equilibrium_point(0) {}
 		};
 
 		virtual JointType get_joint_type() { return JOINT_TYPE_6DOF; }
@@ -541,8 +552,6 @@ private:
 	Skeleton *parent_skeleton;
 	Transform body_offset;
 	Transform body_offset_inverse;
-	bool static_body;
-	bool _internal_static_body;
 	bool simulate_physics;
 	bool _internal_simulate_physics;
 	int bone_id;
@@ -609,9 +618,6 @@ public:
 	void set_body_offset(const Transform &p_offset);
 	const Transform &get_body_offset() const;
 
-	void set_static_body(bool p_static);
-	bool is_static_body();
-
 	void set_simulate_physics(bool p_simulate);
 	bool get_simulate_physics();
 	bool is_simulating_physics();
@@ -634,6 +640,11 @@ public:
 	void set_gravity_scale(real_t p_gravity_scale);
 	real_t get_gravity_scale() const;
 
+	void apply_central_impulse(const Vector3 &p_impulse);
+	void apply_impulse(const Vector3 &p_pos, const Vector3 &p_impulse);
+
+	void reset_physics_simulation_state();
+	void reset_to_rest_position();
 
 	PhysicalBone();
 	~PhysicalBone();
@@ -641,10 +652,6 @@ public:
 private:
 	void update_bone_id();
 	void update_offset();
-	void reset_to_rest_position();
-
-	void _reset_physics_simulation_state();
-	void _reset_staticness_state();
 
 	void _start_physics_simulation();
 	void _stop_physics_simulation();

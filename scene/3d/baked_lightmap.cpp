@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,6 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
+#if 0
 #include "baked_lightmap.h"
 #include "core/io/config_file.h"
 #include "core/io/resource_saver.h"
@@ -46,12 +47,12 @@ AABB BakedLightmapData::get_bounds() const {
 	return bounds;
 }
 
-void BakedLightmapData::set_octree(const PoolVector<uint8_t> &p_octree) {
+void BakedLightmapData::set_octree(const Vector<uint8_t> &p_octree) {
 
 	VS::get_singleton()->lightmap_capture_set_octree(baked_light, p_octree);
 }
 
-PoolVector<uint8_t> BakedLightmapData::get_octree() const {
+Vector<uint8_t> BakedLightmapData::get_octree() const {
 
 	return VS::get_singleton()->lightmap_capture_get_octree(baked_light);
 }
@@ -86,9 +87,9 @@ float BakedLightmapData::get_energy() const {
 	return energy;
 }
 
-void BakedLightmapData::add_user(const NodePath &p_path, const Ref<Texture> &p_lightmap, int p_instance) {
+void BakedLightmapData::add_user(const NodePath &p_path, const Ref<Texture2D> &p_lightmap, int p_instance) {
 
-	ERR_FAIL_COND(p_lightmap.is_null());
+	ERR_FAIL_COND_MSG(p_lightmap.is_null(), "It's not a reference to a valid Texture object.");
 	User user;
 	user.path = p_path;
 	user.lightmap = p_lightmap;
@@ -105,9 +106,9 @@ NodePath BakedLightmapData::get_user_path(int p_user) const {
 	ERR_FAIL_INDEX_V(p_user, users.size(), NodePath());
 	return users[p_user].path;
 }
-Ref<Texture> BakedLightmapData::get_user_lightmap(int p_user) const {
+Ref<Texture2D> BakedLightmapData::get_user_lightmap(int p_user) const {
 
-	ERR_FAIL_INDEX_V(p_user, users.size(), Ref<Texture>());
+	ERR_FAIL_INDEX_V(p_user, users.size(), Ref<Texture2D>());
 	return users[p_user].lightmap;
 }
 
@@ -173,8 +174,8 @@ void BakedLightmapData::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::AABB, "bounds", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "set_bounds", "get_bounds");
 	ADD_PROPERTY(PropertyInfo(Variant::TRANSFORM, "cell_space_transform", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "set_cell_space_transform", "get_cell_space_transform");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "cell_subdiv", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "set_cell_subdiv", "get_cell_subdiv");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "energy", PROPERTY_HINT_RANGE, "0,16,0.01"), "set_energy", "get_energy");
-	ADD_PROPERTY(PropertyInfo(Variant::POOL_BYTE_ARRAY, "octree", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "set_octree", "get_octree");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "energy", PROPERTY_HINT_RANGE, "0,16,0.01,or_greater"), "set_energy", "get_energy");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_BYTE_ARRAY, "octree", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "set_octree", "get_octree");
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "user_data", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL), "_set_user_data", "_get_user_data");
 }
 
@@ -215,10 +216,20 @@ float BakedLightmap::get_capture_cell_size() const {
 void BakedLightmap::set_extents(const Vector3 &p_extents) {
 	extents = p_extents;
 	update_gizmo();
+	_change_notify("bake_extents");
 }
 
 Vector3 BakedLightmap::get_extents() const {
 	return extents;
+}
+
+void BakedLightmap::set_bake_default_texels_per_unit(const float &p_bake_texels_per_unit) {
+	bake_default_texels_per_unit = p_bake_texels_per_unit;
+	update_gizmo();
+}
+
+float BakedLightmap::get_bake_default_texels_per_unit() const {
+	return bake_default_texels_per_unit;
 }
 
 void BakedLightmap::_find_meshes_and_lights(Node *p_at_node, List<PlotMesh> &plot_meshes, List<PlotLight> &plot_lights) {
@@ -236,7 +247,7 @@ void BakedLightmap::_find_meshes_and_lights(Node *p_at_node, List<PlotMesh> &plo
 				}
 			}
 
-			if (all_have_uv2 && mesh->get_lightmap_size_hint() != Size2()) {
+			if (all_have_uv2) {
 				//READY TO BAKE! size hint could be computed if not found, actually..
 
 				AABB aabb = mesh->get_aabb();
@@ -350,7 +361,7 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 		//check for valid save path
 		DirAccessRef d = DirAccess::open(save_path);
 		if (!d) {
-			ERR_PRINTS("Invalid Save Path: " + save_path);
+			ERR_PRINT("Invalid Save Path '" + save_path + "'.");
 			return BAKE_ERROR_NO_SAVE_PATH;
 		}
 	}
@@ -358,7 +369,7 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 	Ref<BakedLightmapData> new_light_data;
 	new_light_data.instance();
 
-	VoxelLightBaker baker;
+	Voxelizer baker;
 
 	int bake_subdiv;
 	int capture_subdiv;
@@ -403,7 +414,7 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 	}
 
 	pmc = 0;
-	baker.begin_bake_light(VoxelLightBaker::BakeQuality(bake_quality), VoxelLightBaker::BakeMode(bake_mode), propagation, energy);
+	baker.begin_bake_light(Voxelizer::BakeQuality(bake_quality), Voxelizer::BakeMode(bake_mode), propagation, energy);
 
 	for (List<PlotLight>::Element *E = light_list.front(); E; E = E->next()) {
 
@@ -455,7 +466,7 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 		used_mesh_names.insert(mesh_name);
 
 		pmc++;
-		VoxelLightBaker::LightMapData lm;
+		Voxelizer::LightMapData lm;
 
 		Error err;
 		if (bake_step_function) {
@@ -463,7 +474,7 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 			btd.text = RTR("Lighting Meshes: ") + mesh_name + " (" + itos(pmc) + "/" + itos(mesh_list.size()) + ")";
 			btd.pass = step;
 			btd.last_step = 0;
-			err = baker.make_lightmap(E->get().local_xform, E->get().mesh, lm, _bake_time, &btd);
+			err = baker.make_lightmap(E->get().local_xform, E->get().mesh, bake_default_texels_per_unit, lm, _bake_time, &btd);
 			if (err != OK) {
 				bake_end_function();
 				if (err == ERR_SKIP)
@@ -473,7 +484,7 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 			step += 100;
 		} else {
 
-			err = baker.make_lightmap(E->get().local_xform, E->get().mesh, lm);
+			err = baker.make_lightmap(E->get().local_xform, E->get().mesh, bake_default_texels_per_unit, lm);
 		}
 
 		if (err == OK) {
@@ -481,17 +492,16 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 			Ref<Image> image;
 			image.instance();
 
-			uint32_t tex_flags = Texture::FLAGS_DEFAULT;
 			if (hdr) {
 
 				//just save a regular image
-				PoolVector<uint8_t> data;
+				Vector<uint8_t> data;
 				int s = lm.light.size();
 				data.resize(lm.light.size() * 2);
 				{
 
-					PoolVector<uint8_t>::Write w = data.write();
-					PoolVector<float>::Read r = lm.light.read();
+					uint8_t* w = data.ptrw();
+					const float* r = lm.light.ptr();
 					uint16_t *hfw = (uint16_t *)w.ptr();
 					for (int i = 0; i < s; i++) {
 						hfw[i] = Math::make_half_float(r[i]);
@@ -503,13 +513,13 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 			} else {
 
 				//just save a regular image
-				PoolVector<uint8_t> data;
+				Vector<uint8_t> data;
 				int s = lm.light.size();
 				data.resize(lm.light.size());
 				{
 
-					PoolVector<uint8_t>::Write w = data.write();
-					PoolVector<float>::Read r = lm.light.read();
+					uint8_t* w = data.ptrw();
+					const float* r = lm.light.ptr();
 					for (int i = 0; i < s; i += 3) {
 						Color c(r[i + 0], r[i + 1], r[i + 2]);
 						c = c.to_srgb();
@@ -524,11 +534,10 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 				//This texture is saved to SRGB for two reasons:
 				// 1) first is so it looks better when doing the LINEAR->SRGB conversion (more accurate)
 				// 2) So it can be used in the GLES2 backend, which does not support linkear workflow
-				tex_flags |= Texture::FLAG_CONVERT_TO_LINEAR;
 			}
 
 			String image_path = save_path.plus_file(mesh_name);
-			Ref<Texture> texture;
+			Ref<Texture2D> texture;
 
 			if (ResourceLoader::import) {
 
@@ -573,7 +582,7 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 					tex.instance();
 				}
 
-				tex->create_from_image(image, tex_flags);
+				tex->create_from_image(image);
 
 				err = ResourceSaver::save(image_path, tex, ResourceSaver::FLAG_CHANGE_PATH);
 				if (set_path) {
@@ -618,7 +627,7 @@ BakedLightmap::BakeError BakedLightmap::bake(Node *p_from_node, bool p_create_vi
 
 	if (p_create_visual_debug) {
 		MultiMeshInstance *mmi = memnew(MultiMeshInstance);
-		mmi->set_multimesh(baker.create_debug_multimesh(VoxelLightBaker::DEBUG_LIGHT));
+		mmi->set_multimesh(baker.create_debug_multimesh(Voxelizer::DEBUG_LIGHT));
 		add_child(mmi);
 #ifdef TOOLS_ENABLED
 		if (get_tree()->get_edited_scene_root() == this) {
@@ -658,7 +667,7 @@ void BakedLightmap::_assign_lightmaps() {
 	ERR_FAIL_COND(!light_data.is_valid());
 
 	for (int i = 0; i < light_data->get_user_count(); i++) {
-		Ref<Texture> lightmap = light_data->get_user_lightmap(i);
+		Ref<Texture2D> lightmap = light_data->get_user_lightmap(i);
 		ERR_CONTINUE(!lightmap.is_valid());
 
 		Node *node = get_node(light_data->get_user_path(i));
@@ -766,8 +775,8 @@ String BakedLightmap::get_image_path() const {
 AABB BakedLightmap::get_aabb() const {
 	return AABB(-extents, extents * 2);
 }
-PoolVector<Face3> BakedLightmap::get_faces(uint32_t p_usage_flags) const {
-	return PoolVector<Face3>();
+Vector<Face3> BakedLightmap::get_faces(uint32_t p_usage_flags) const {
+	return Vector<Face3>();
 }
 
 void BakedLightmap::_bind_methods() {
@@ -790,6 +799,9 @@ void BakedLightmap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_extents", "extents"), &BakedLightmap::set_extents);
 	ClassDB::bind_method(D_METHOD("get_extents"), &BakedLightmap::get_extents);
 
+	ClassDB::bind_method(D_METHOD("set_bake_default_texels_per_unit", "texels"), &BakedLightmap::set_bake_default_texels_per_unit);
+	ClassDB::bind_method(D_METHOD("get_bake_default_texels_per_unit"), &BakedLightmap::get_bake_default_texels_per_unit);
+
 	ClassDB::bind_method(D_METHOD("set_propagation", "propagation"), &BakedLightmap::set_propagation);
 	ClassDB::bind_method(D_METHOD("get_propagation"), &BakedLightmap::get_propagation);
 
@@ -807,15 +819,16 @@ void BakedLightmap::_bind_methods() {
 	ClassDB::set_method_flags(get_class_static(), _scs_create("debug_bake"), METHOD_FLAGS_DEFAULT | METHOD_FLAG_EDITOR);
 
 	ADD_GROUP("Bake", "bake_");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "bake_cell_size", PROPERTY_HINT_RANGE, "0.01,64,0.01"), "set_bake_cell_size", "get_bake_cell_size");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bake_cell_size", PROPERTY_HINT_RANGE, "0.01,64,0.01"), "set_bake_cell_size", "get_bake_cell_size");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "bake_quality", PROPERTY_HINT_ENUM, "Low,Medium,High"), "set_bake_quality", "get_bake_quality");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "bake_mode", PROPERTY_HINT_ENUM, "ConeTrace,RayTrace"), "set_bake_mode", "get_bake_mode");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "bake_propagation", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_propagation", "get_propagation");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "bake_energy", PROPERTY_HINT_RANGE, "0,32,0.01"), "set_energy", "get_energy");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bake_propagation", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_propagation", "get_propagation");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bake_energy", PROPERTY_HINT_RANGE, "0,32,0.01"), "set_energy", "get_energy");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "bake_hdr"), "set_hdr", "is_hdr");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "bake_extents"), "set_extents", "get_extents");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bake_default_texels_per_unit"), "set_bake_default_texels_per_unit", "get_bake_default_texels_per_unit");
 	ADD_GROUP("Capture", "capture_");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "capture_cell_size", PROPERTY_HINT_RANGE, "0.01,64,0.01"), "set_capture_cell_size", "get_capture_cell_size");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "capture_cell_size", PROPERTY_HINT_RANGE, "0.01,64,0.01"), "set_capture_cell_size", "get_capture_cell_size");
 	ADD_GROUP("Data", "");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "image_path", PROPERTY_HINT_DIR), "set_image_path", "get_image_path");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "light_data", PROPERTY_HINT_RESOURCE_TYPE, "BakedLightmapData"), "set_light_data", "get_light_data");
@@ -836,6 +849,7 @@ void BakedLightmap::_bind_methods() {
 BakedLightmap::BakedLightmap() {
 
 	extents = Vector3(10, 10, 10);
+	bake_default_texels_per_unit = 20;
 	bake_cell_size = 0.25;
 	capture_cell_size = 0.5;
 
@@ -847,3 +861,4 @@ BakedLightmap::BakedLightmap() {
 	image_path = ".";
 	set_disable_scale(true);
 }
+#endif

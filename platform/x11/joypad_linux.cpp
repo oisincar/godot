@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -83,7 +83,6 @@ void JoypadLinux::Joypad::reset() {
 JoypadLinux::JoypadLinux(InputDefault *in) {
 	exit_udev = false;
 	input = in;
-	joy_mutex = Mutex::create();
 	joy_thread = Thread::create(joy_thread_func, this);
 }
 
@@ -91,7 +90,6 @@ JoypadLinux::~JoypadLinux() {
 	exit_udev = true;
 	Thread::wait_to_finish(joy_thread);
 	memdelete(joy_thread);
-	memdelete(joy_mutex);
 	close_joypad();
 }
 
@@ -101,7 +99,6 @@ void JoypadLinux::joy_thread_func(void *p_user) {
 		JoypadLinux *joy = (JoypadLinux *)p_user;
 		joy->run_joypad_thread();
 	}
-	return;
 }
 
 void JoypadLinux::run_joypad_thread() {
@@ -138,9 +135,8 @@ void JoypadLinux::enumerate_joypads(udev *p_udev) {
 
 			String devnode_str = devnode;
 			if (devnode_str.find(ignore_str) == -1) {
-				joy_mutex->lock();
+				MutexLock lock(joy_mutex);
 				open_joypad(devnode);
-				joy_mutex->unlock();
 			}
 		}
 		udev_device_unref(dev);
@@ -177,7 +173,7 @@ void JoypadLinux::monitor_joypads(udev *p_udev) {
 
 			if (dev && udev_device_get_devnode(dev) != 0) {
 
-				joy_mutex->lock();
+				MutexLock lock(joy_mutex);
 				String action = udev_device_get_action(dev);
 				const char *devnode = udev_device_get_devnode(dev);
 				if (devnode) {
@@ -193,7 +189,6 @@ void JoypadLinux::monitor_joypads(udev *p_udev) {
 				}
 
 				udev_device_unref(dev);
-				joy_mutex->unlock();
 			}
 		}
 		usleep(50000);
@@ -205,15 +200,17 @@ void JoypadLinux::monitor_joypads(udev *p_udev) {
 void JoypadLinux::monitor_joypads() {
 
 	while (!exit_udev) {
-		joy_mutex->lock();
-		for (int i = 0; i < 32; i++) {
-			char fname[64];
-			sprintf(fname, "/dev/input/event%d", i);
-			if (attached_devices.find(fname) == -1) {
-				open_joypad(fname);
+		{
+			MutexLock lock(joy_mutex);
+
+			for (int i = 0; i < 32; i++) {
+				char fname[64];
+				sprintf(fname, "/dev/input/event%d", i);
+				if (attached_devices.find(fname) == -1) {
+					open_joypad(fname);
+				}
 			}
 		}
-		joy_mutex->unlock();
 		usleep(1000000); // 1s
 	}
 }
@@ -367,12 +364,12 @@ void JoypadLinux::open_joypad(const char *p_path) {
 		joy.fd = fd;
 		joy.devpath = String(p_path);
 		setup_joypad_properties(joy_num);
-		sprintf(uid, "%04x%04x", __bswap_16(inpid.bustype), 0);
+		sprintf(uid, "%04x%04x", BSWAP16(inpid.bustype), 0);
 		if (inpid.vendor && inpid.product && inpid.version) {
 
-			uint16_t vendor = __bswap_16(inpid.vendor);
-			uint16_t product = __bswap_16(inpid.product);
-			uint16_t version = __bswap_16(inpid.version);
+			uint16_t vendor = BSWAP16(inpid.vendor);
+			uint16_t product = BSWAP16(inpid.product);
+			uint16_t version = BSWAP16(inpid.version);
 
 			sprintf(uid + String(uid).length(), "%04x%04x%04x%04x%04x%04x", vendor, 0, product, 0, version, 0);
 			input->joy_connection_changed(joy_num, true, name, uid);
@@ -414,7 +411,9 @@ void JoypadLinux::joypad_vibration_start(int p_id, float p_weak_magnitude, float
 	play.type = EV_FF;
 	play.code = effect.id;
 	play.value = 1;
-	write(joy.fd, (const void *)&play, sizeof(play));
+	if (write(joy.fd, (const void *)&play, sizeof(play)) == -1) {
+		print_verbose("Couldn't write to Joypad device.");
+	}
 
 	joy.ff_effect_id = effect.id;
 	joy.ff_effect_timestamp = p_timestamp;
@@ -444,10 +443,10 @@ InputDefault::JoyAxis JoypadLinux::axis_correct(const input_absinfo *p_abs, int 
 		jx.min = -1;
 		if (p_value < 0) {
 			jx.value = (float)-p_value / min;
+		} else {
+			jx.value = (float)p_value / max;
 		}
-		jx.value = (float)p_value / max;
-	}
-	if (min == 0) {
+	} else if (min == 0) {
 		jx.min = 0;
 		jx.value = 0.0f + (float)p_value / max;
 	}
@@ -456,7 +455,7 @@ InputDefault::JoyAxis JoypadLinux::axis_correct(const input_absinfo *p_abs, int 
 
 void JoypadLinux::process_joypads() {
 
-	if (joy_mutex->try_lock() != OK) {
+	if (joy_mutex.try_lock() != OK) {
 		return;
 	}
 	for (int i = 0; i < JOYPADS_MAX; i++) {
@@ -476,7 +475,7 @@ void JoypadLinux::process_joypads() {
 
 				// ev may be tainted and out of MAX_KEY range, which will cause
 				// joy->key_map[ev.code] to crash
-				if (ev.code < 0 || ev.code >= MAX_KEY)
+				if (ev.code >= MAX_KEY)
 					return;
 
 				switch (ev.type) {
@@ -512,6 +511,8 @@ void JoypadLinux::process_joypads() {
 								break;
 
 							default:
+								if (ev.code >= MAX_ABS)
+									return;
 								if (joy->abs_map[ev.code] != -1 && joy->abs_info[ev.code]) {
 									InputDefault::JoyAxis value = axis_correct(joy->abs_info[ev.code], ev.value);
 									joy->curr_axis[joy->abs_map[ev.code]] = value;
@@ -545,6 +546,6 @@ void JoypadLinux::process_joypads() {
 			}
 		}
 	}
-	joy_mutex->unlock();
+	joy_mutex.unlock();
 }
 #endif

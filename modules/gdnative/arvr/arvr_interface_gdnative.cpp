@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,11 +31,15 @@
 #include "arvr_interface_gdnative.h"
 #include "main/input_default.h"
 #include "servers/arvr/arvr_positional_tracker.h"
-#include "servers/visual/visual_server_global.h"
+#include "servers/visual/visual_server_globals.h"
+
+void ARVRInterfaceGDNative::_bind_methods() {
+	ADD_PROPERTY_DEFAULT("interface_is_initialized", false);
+	ADD_PROPERTY_DEFAULT("ar_is_anchor_detection_enabled", false);
+}
 
 ARVRInterfaceGDNative::ARVRInterfaceGDNative() {
-	// testing
-	printf("Construct gdnative interface\n");
+	print_verbose("Construct gdnative interface\n");
 
 	// we won't have our data pointer until our library gets set
 	data = NULL;
@@ -44,9 +48,9 @@ ARVRInterfaceGDNative::ARVRInterfaceGDNative() {
 }
 
 ARVRInterfaceGDNative::~ARVRInterfaceGDNative() {
-	printf("Destruct gdnative interface\n");
+	print_verbose("Destruct gdnative interface\n");
 
-	if (is_initialized()) {
+	if (interface != NULL && is_initialized()) {
 		uninitialize();
 	};
 
@@ -99,13 +103,10 @@ int ARVRInterfaceGDNative::get_capabilities() const {
 }
 
 bool ARVRInterfaceGDNative::get_anchor_detection_is_enabled() const {
-	bool enabled;
 
 	ERR_FAIL_COND_V(interface == NULL, false);
 
-	enabled = interface->get_anchor_detection_is_enabled(data);
-
-	return enabled;
+	return interface->get_anchor_detection_is_enabled(data);
 }
 
 void ARVRInterfaceGDNative::set_anchor_detection_is_enabled(bool p_enable) {
@@ -113,6 +114,17 @@ void ARVRInterfaceGDNative::set_anchor_detection_is_enabled(bool p_enable) {
 	ERR_FAIL_COND(interface == NULL);
 
 	interface->set_anchor_detection_is_enabled(data, p_enable);
+}
+
+int ARVRInterfaceGDNative::get_camera_feed_id() {
+
+	ERR_FAIL_COND_V(interface == NULL, 0);
+
+	if ((interface->version.major > 1) || ((interface->version.major) == 1 && (interface->version.minor >= 1))) {
+		return (unsigned int)interface->get_camera_feed_id(data);
+	} else {
+		return 0;
+	}
 }
 
 bool ARVRInterfaceGDNative::is_stereo() {
@@ -126,21 +138,16 @@ bool ARVRInterfaceGDNative::is_stereo() {
 }
 
 bool ARVRInterfaceGDNative::is_initialized() const {
-	bool initialized;
 
 	ERR_FAIL_COND_V(interface == NULL, false);
 
-	initialized = interface->is_initialized(data);
-
-	return initialized;
+	return interface->is_initialized(data);
 }
 
 bool ARVRInterfaceGDNative::initialize() {
-	bool initialized;
-
 	ERR_FAIL_COND_V(interface == NULL, false);
 
-	initialized = interface->initialize(data);
+	bool initialized = interface->initialize(data);
 
 	if (initialized) {
 		// if we successfully initialize our interface and we don't have a primary interface yet, this becomes our primary interface
@@ -198,6 +205,17 @@ CameraMatrix ARVRInterfaceGDNative::get_projection_for_eye(ARVRInterface::Eyes p
 	return cm;
 }
 
+unsigned int ARVRInterfaceGDNative::get_external_texture_for_eye(ARVRInterface::Eyes p_eye) {
+
+	ERR_FAIL_COND_V(interface == NULL, 0);
+
+	if ((interface->version.major > 1) || ((interface->version.major) == 1 && (interface->version.minor >= 1))) {
+		return (unsigned int)interface->get_external_texture_for_eye(data, (godot_int)p_eye);
+	} else {
+		return 0;
+	}
+}
+
 void ARVRInterfaceGDNative::commit_for_eye(ARVRInterface::Eyes p_eye, RID p_render_target, const Rect2 &p_screen_rect) {
 
 	ERR_FAIL_COND(interface == NULL);
@@ -211,6 +229,15 @@ void ARVRInterfaceGDNative::process() {
 	interface->process(data);
 }
 
+void ARVRInterfaceGDNative::notification(int p_what) {
+	ERR_FAIL_COND(interface == NULL);
+
+	// this is only available in interfaces that implement 1.1 or later
+	if ((interface->version.major > 1) || ((interface->version.major == 1) && (interface->version.minor > 0))) {
+		interface->notification(data, p_what);
+	}
+}
+
 /////////////////////////////////////////////////////////////////////////////////////
 // some helper callbacks
 
@@ -218,12 +245,11 @@ extern "C" {
 
 void GDAPI godot_arvr_register_interface(const godot_arvr_interface_gdnative *p_interface) {
 	// If our major version is 0 or bigger then 10, we're likely looking at our constructor pointer from an older plugin
-	ERR_EXPLAINC("GDNative ARVR interfaces build for Godot 3.0 are not supported");
-	ERR_FAIL_COND((p_interface->version.major == 0) || (p_interface->version.major > 10));
+	ERR_FAIL_COND_MSG((p_interface->version.major == 0) || (p_interface->version.major > 10), "GDNative ARVR interfaces build for Godot 3.0 are not supported.");
 
 	Ref<ARVRInterfaceGDNative> new_interface;
 	new_interface.instance();
-	new_interface->set_interface((godot_arvr_interface_gdnative *const)p_interface);
+	new_interface->set_interface((const godot_arvr_interface_gdnative *)p_interface);
 	ARVRServer::get_singleton()->add_interface(new_interface);
 }
 
@@ -251,7 +277,9 @@ godot_transform GDAPI godot_arvr_get_reference_frame() {
 void GDAPI godot_arvr_blit(godot_int p_eye, godot_rid *p_render_target, godot_rect2 *p_rect) {
 	// blits out our texture as is, handy for preview display of one of the eyes that is already rendered with lens distortion on an external HMD
 	ARVRInterface::Eyes eye = (ARVRInterface::Eyes)p_eye;
+#if 0
 	RID *render_target = (RID *)p_render_target;
+#endif
 	Rect2 screen_rect = *(Rect2 *)p_rect;
 
 	if (eye == ARVRInterface::EYE_LEFT) {
@@ -260,18 +288,27 @@ void GDAPI godot_arvr_blit(godot_int p_eye, godot_rid *p_render_target, godot_re
 		screen_rect.size.x /= 2.0;
 		screen_rect.position.x += screen_rect.size.x;
 	}
-
-	VSG::rasterizer->set_current_render_target(RID());
+#ifndef _MSC_VER
+#warning this needs to be redone
+#endif
+#if 0
 	VSG::rasterizer->blit_render_target_to_screen(*render_target, screen_rect, 0);
+#endif
 }
 
 godot_int GDAPI godot_arvr_get_texid(godot_rid *p_render_target) {
 	// In order to send off our textures to display on our hardware we need the opengl texture ID instead of the render target RID
 	// This is a handy function to expose that.
+#if 0
 	RID *render_target = (RID *)p_render_target;
 
 	RID eye_texture = VSG::storage->render_target_get_texture(*render_target);
-	uint32_t texid = VS::get_singleton()->texture_get_texid(eye_texture);
+#endif
+
+#ifndef _MSC_VER
+#warning need to obtain this ID again
+#endif
+	uint32_t texid = 0; //VS::get_singleton()->texture_get_texid(eye_texture);
 
 	return texid;
 }

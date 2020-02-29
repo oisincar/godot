@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,11 +28,10 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef ANDROID_NATIVE_ACTIVITY
-
 #include "dir_access_jandroid.h"
 #include "core/print_string.h"
 #include "file_access_jandroid.h"
+#include "string_android.h"
 #include "thread_jandroid.h"
 
 jobject DirAccessJAndroid::io = NULL;
@@ -71,7 +70,7 @@ String DirAccessJAndroid::get_next() {
 	if (!str)
 		return "";
 
-	String ret = String::utf8(env->GetStringUTFChars((jstring)str, NULL));
+	String ret = jstring_to_string((jstring)str, env);
 	env->DeleteLocalRef((jobject)str);
 	return ret;
 }
@@ -111,7 +110,6 @@ String DirAccessJAndroid::get_drive(int p_drive) {
 Error DirAccessJAndroid::change_dir(String p_dir) {
 
 	JNIEnv *env = ThreadAndroid::get_env();
-	p_dir = p_dir.simplify_path();
 
 	if (p_dir == "" || p_dir == "." || (p_dir == ".." && current_dir == ""))
 		return OK;
@@ -214,6 +212,11 @@ Error DirAccessJAndroid::remove(String p_name) {
 	ERR_FAIL_V(ERR_UNAVAILABLE);
 }
 
+String DirAccessJAndroid::get_filesystem_type() const {
+
+	return "APK";
+}
+
 //FileType get_file_type() const;
 size_t DirAccessJAndroid::get_space_left() {
 
@@ -245,4 +248,3 @@ DirAccessJAndroid::~DirAccessJAndroid() {
 
 	list_dir_end();
 }
-#endif

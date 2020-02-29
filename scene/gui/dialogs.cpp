@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -35,6 +35,8 @@
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
+#include "editor/editor_scale.h"
+#include "scene/main/viewport.h" // Only used to check for more modals when dimming the editor.
 #endif
 
 // WindowDialog
@@ -59,7 +61,7 @@ void WindowDialog::_fix_size() {
 	float left = 0;
 	float bottom = 0;
 	float right = 0;
-	// Check validity, because the theme could contain a different type of StyleBox
+	// Check validity, because the theme could contain a different type of StyleBox.
 	if (panel->get_class() == "StyleBoxTexture") {
 		Ref<StyleBoxTexture> panel_texture = Object::cast_to<StyleBoxTexture>(*panel);
 		top = panel_texture->get_expand_margin_size(MARGIN_TOP);
@@ -160,7 +162,7 @@ void WindowDialog::_gui_input(const Ref<InputEvent> &p_event) {
 			global_pos.y = MAX(global_pos.y, 0); // Ensure title bar stays visible.
 
 			Rect2 rect = get_rect();
-			Size2 min_size = get_minimum_size();
+			Size2 min_size = get_combined_minimum_size();
 
 			if (drag_type == DRAG_MOVE) {
 				rect.position = global_pos - drag_offset;
@@ -205,9 +207,9 @@ void WindowDialog::_notification(int p_what) {
 			Color title_color = get_color("title_color", "WindowDialog");
 			int title_height = get_constant("title_height", "WindowDialog");
 			int font_height = title_font->get_height() - title_font->get_descent() * 2;
-			int x = (size.x - title_font->get_string_size(title).x) / 2;
+			int x = (size.x - title_font->get_string_size(xl_title).x) / 2;
 			int y = (-title_height + font_height) / 2;
-			title_font->draw(canvas, Point2(x, y), title, title_color, size.x - panel->get_minimum_size().x);
+			title_font->draw(canvas, Point2(x, y), xl_title, title_color, size.x - panel->get_minimum_size().x);
 		} break;
 
 		case NOTIFICATION_THEME_CHANGED:
@@ -219,6 +221,15 @@ void WindowDialog::_notification(int p_what) {
 			close_button->set_begin(Point2(-get_constant("close_h_ofs", "WindowDialog"), -get_constant("close_v_ofs", "WindowDialog")));
 		} break;
 
+		case NOTIFICATION_TRANSLATION_CHANGED: {
+			String new_title = tr(title);
+			if (new_title != xl_title) {
+				xl_title = new_title;
+				minimum_size_changed();
+				update();
+			}
+		} break;
+
 		case NOTIFICATION_MOUSE_EXIT: {
 			// Reset the mouse cursor when leaving the resizable window border.
 			if (resizable && !drag_type) {
@@ -226,14 +237,20 @@ void WindowDialog::_notification(int p_what) {
 					set_default_cursor_shape(CURSOR_ARROW);
 			}
 		} break;
+
 #ifdef TOOLS_ENABLED
 		case NOTIFICATION_POST_POPUP: {
-			if (get_tree() && Engine::get_singleton()->is_editor_hint() && EditorNode::get_singleton())
+			if (get_tree() && Engine::get_singleton()->is_editor_hint() && EditorNode::get_singleton()) {
+				was_editor_dimmed = EditorNode::get_singleton()->is_editor_dimmed();
 				EditorNode::get_singleton()->dim_editor(true);
+			}
 		} break;
+
 		case NOTIFICATION_POPUP_HIDE: {
-			if (get_tree() && Engine::get_singleton()->is_editor_hint() && EditorNode::get_singleton())
+			if (get_tree() && Engine::get_singleton()->is_editor_hint() && EditorNode::get_singleton() && !was_editor_dimmed) {
 				EditorNode::get_singleton()->dim_editor(false);
+				set_pass_on_modal_close_click(false);
+			}
 		} break;
 #endif
 	}
@@ -272,8 +289,12 @@ int WindowDialog::_drag_hit_test(const Point2 &pos) const {
 
 void WindowDialog::set_title(const String &p_title) {
 
-	title = tr(p_title);
-	update();
+	if (title != p_title) {
+		title = p_title;
+		xl_title = tr(p_title);
+		minimum_size_changed();
+		update();
+	}
 }
 String WindowDialog::get_title() const {
 
@@ -292,12 +313,12 @@ Size2 WindowDialog::get_minimum_size() const {
 	Ref<Font> font = get_font("title_font", "WindowDialog");
 
 	const int button_width = close_button->get_combined_minimum_size().x;
-	const int title_width = font->get_string_size(title).x;
+	const int title_width = font->get_string_size(xl_title).x;
 	const int padding = button_width / 2;
 	const int button_area = button_width + padding;
 
-	// as the title gets centered, title_width + close_button_width is not enough.
-	// we want a width w, such that w / 2 - title_width / 2 >= button_area, i.e.
+	// As the title gets centered, title_width + close_button_width is not enough.
+	// We want a width w, such that w / 2 - title_width / 2 >= button_area, i.e.
 	// w >= 2 * button_area + title_width
 
 	return Size2(2 * button_area + title_width, 1);
@@ -315,7 +336,6 @@ void WindowDialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_title"), &WindowDialog::get_title);
 	ClassDB::bind_method(D_METHOD("set_resizable", "resizable"), &WindowDialog::set_resizable);
 	ClassDB::bind_method(D_METHOD("get_resizable"), &WindowDialog::get_resizable);
-	ClassDB::bind_method(D_METHOD("_closed"), &WindowDialog::_closed);
 	ClassDB::bind_method(D_METHOD("get_close_button"), &WindowDialog::get_close_button);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "window_title", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT_INTL), "set_title", "get_title");
@@ -324,12 +344,15 @@ void WindowDialog::_bind_methods() {
 
 WindowDialog::WindowDialog() {
 
-	//title="Hello!";
 	drag_type = DRAG_NONE;
 	resizable = false;
 	close_button = memnew(TextureButton);
 	add_child(close_button);
-	close_button->connect("pressed", this, "_closed");
+	close_button->connect("pressed", callable_mp(this, &WindowDialog::_closed));
+
+#ifdef TOOLS_ENABLED
+	was_editor_dimmed = false;
+#endif
 }
 
 WindowDialog::~WindowDialog() {
@@ -340,9 +363,8 @@ WindowDialog::~WindowDialog() {
 void PopupDialog::_notification(int p_what) {
 
 	if (p_what == NOTIFICATION_DRAW) {
-
 		RID ci = get_canvas_item();
-		get_stylebox("panel", "PopupMenu")->draw(ci, Rect2(Point2(), get_size()));
+		get_stylebox("panel")->draw(ci, Rect2(Point2(), get_size()));
 	}
 }
 
@@ -362,19 +384,19 @@ void AcceptDialog::_post_popup() {
 
 void AcceptDialog::_notification(int p_what) {
 
-	if (p_what == NOTIFICATION_MODAL_CLOSE) {
+	switch (p_what) {
+		case NOTIFICATION_MODAL_CLOSE: {
+			cancel_pressed();
+		} break;
 
-		cancel_pressed();
-	} else if (p_what == NOTIFICATION_READY) {
-
-		_update_child_rects();
-	} else if (p_what == NOTIFICATION_RESIZED) {
-
-		_update_child_rects();
+		case NOTIFICATION_READY:
+		case NOTIFICATION_RESIZED: {
+			_update_child_rects();
+		} break;
 	}
 }
 
-void AcceptDialog::_builtin_text_entered(const String &p_text) {
+void AcceptDialog::_text_entered(const String &p_text) {
 
 	_ok_pressed();
 }
@@ -386,9 +408,16 @@ void AcceptDialog::_ok_pressed() {
 	ok_pressed();
 	emit_signal("confirmed");
 }
+
 void AcceptDialog::_close_pressed() {
 
 	cancel_pressed();
+}
+
+// FIXME: This is redundant with _closed_pressed, but there's a slight behavior
+// change (WindowDialog's _closed() also calls hide()) which should be assessed.
+void AcceptDialog::_on_close_pressed() {
+	_closed(); // From WindowDialog.
 }
 
 String AcceptDialog::get_text() const {
@@ -406,16 +435,26 @@ void AcceptDialog::set_hide_on_ok(bool p_hide) {
 
 	hide_on_ok = p_hide;
 }
-
 bool AcceptDialog::get_hide_on_ok() const {
 
 	return hide_on_ok;
 }
 
+void AcceptDialog::set_autowrap(bool p_autowrap) {
+
+	label->set_autowrap(p_autowrap);
+}
+bool AcceptDialog::has_autowrap() {
+
+	return label->has_autowrap();
+}
+
 void AcceptDialog::register_text_enter(Node *p_line_edit) {
 
 	ERR_FAIL_NULL(p_line_edit);
-	p_line_edit->connect("text_entered", this, "_builtin_text_entered");
+	LineEdit *line_edit = Object::cast_to<LineEdit>(p_line_edit);
+	if (line_edit)
+		line_edit->connect("text_entered", callable_mp(this, &AcceptDialog::_text_entered));
 }
 
 void AcceptDialog::_update_child_rects() {
@@ -500,7 +539,7 @@ Button *AcceptDialog::add_button(const String &p_text, bool p_right, const Strin
 	}
 
 	if (p_action != "") {
-		button->connect("pressed", this, "_custom_action", varray(p_action));
+		button->connect("pressed", callable_mp(this, &AcceptDialog::_custom_action), varray(p_action));
 	}
 
 	return button;
@@ -512,31 +551,31 @@ Button *AcceptDialog::add_cancel(const String &p_cancel) {
 	if (p_cancel == "")
 		c = RTR("Cancel");
 	Button *b = swap_ok_cancel ? add_button(c, true) : add_button(c);
-	b->connect("pressed", this, "_closed");
+	b->connect("pressed", callable_mp(this, &AcceptDialog::_on_close_pressed));
 	return b;
 }
 
 void AcceptDialog::_bind_methods() {
 
-	ClassDB::bind_method(D_METHOD("_ok"), &AcceptDialog::_ok_pressed);
 	ClassDB::bind_method(D_METHOD("get_ok"), &AcceptDialog::get_ok);
 	ClassDB::bind_method(D_METHOD("get_label"), &AcceptDialog::get_label);
 	ClassDB::bind_method(D_METHOD("set_hide_on_ok", "enabled"), &AcceptDialog::set_hide_on_ok);
 	ClassDB::bind_method(D_METHOD("get_hide_on_ok"), &AcceptDialog::get_hide_on_ok);
 	ClassDB::bind_method(D_METHOD("add_button", "text", "right", "action"), &AcceptDialog::add_button, DEFVAL(false), DEFVAL(""));
 	ClassDB::bind_method(D_METHOD("add_cancel", "name"), &AcceptDialog::add_cancel);
-	ClassDB::bind_method(D_METHOD("_builtin_text_entered"), &AcceptDialog::_builtin_text_entered);
 	ClassDB::bind_method(D_METHOD("register_text_enter", "line_edit"), &AcceptDialog::register_text_enter);
-	ClassDB::bind_method(D_METHOD("_custom_action"), &AcceptDialog::_custom_action);
 	ClassDB::bind_method(D_METHOD("set_text", "text"), &AcceptDialog::set_text);
 	ClassDB::bind_method(D_METHOD("get_text"), &AcceptDialog::get_text);
+	ClassDB::bind_method(D_METHOD("set_autowrap", "autowrap"), &AcceptDialog::set_autowrap);
+	ClassDB::bind_method(D_METHOD("has_autowrap"), &AcceptDialog::has_autowrap);
 
 	ADD_SIGNAL(MethodInfo("confirmed"));
-	ADD_SIGNAL(MethodInfo("custom_action", PropertyInfo(Variant::STRING, "action")));
+	ADD_SIGNAL(MethodInfo("custom_action", PropertyInfo(Variant::STRING_NAME, "action")));
 
 	ADD_GROUP("Dialog", "dialog");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::STRING, "dialog_text", PROPERTY_HINT_MULTILINE_TEXT, "", PROPERTY_USAGE_DEFAULT_INTL), "set_text", "get_text");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "dialog_text", PROPERTY_HINT_MULTILINE_TEXT, "", PROPERTY_USAGE_DEFAULT_INTL), "set_text", "get_text");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "dialog_hide_on_ok"), "set_hide_on_ok", "get_hide_on_ok");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "dialog_autowrap"), "set_autowrap", "has_autowrap");
 }
 
 bool AcceptDialog::swap_ok_cancel = false;
@@ -555,7 +594,6 @@ AcceptDialog::AcceptDialog() {
 	label->set_anchor(MARGIN_BOTTOM, ANCHOR_END);
 	label->set_begin(Point2(margin, margin));
 	label->set_end(Point2(-margin, -button_margin - 10));
-	//label->set_autowrap(true);
 	add_child(label);
 
 	hbc = memnew(HBoxContainer);
@@ -567,7 +605,7 @@ AcceptDialog::AcceptDialog() {
 	hbc->add_child(ok);
 	hbc->add_spacer();
 
-	ok->connect("pressed", this, "_ok");
+	ok->connect("pressed", callable_mp(this, &AcceptDialog::_ok_pressed));
 	set_as_toplevel(true);
 
 	hide_on_ok = true;

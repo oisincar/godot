@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -44,9 +44,6 @@
 
 class DependencyRemoveDialog;
 
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
 class EditorFileDialog : public ConfirmationDialog {
 
 	GDCLASS(EditorFileDialog, ConfirmationDialog);
@@ -71,7 +68,7 @@ public:
 		MODE_SAVE_FILE
 	};
 
-	typedef Ref<Texture> (*GetIconFunc)(const String &);
+	typedef Ref<Texture2D> (*GetIconFunc)(const String &);
 	typedef void (*RegisterFunc)(EditorFileDialog *);
 
 	static GetIconFunc get_icon_func;
@@ -109,22 +106,24 @@ private:
 	TextureRect *preview;
 	VBoxContainer *preview_vb;
 	HSplitContainer *list_hb;
+	HBoxContainer *file_box;
 	LineEdit *file;
+	OptionButton *filter;
 	AcceptDialog *mkdirerr;
 	AcceptDialog *exterr;
-	OptionButton *filter;
 	DirAccess *dir_access;
 	ConfirmationDialog *confirm_save;
 	DependencyRemoveDialog *remove_dialog;
+
 	ToolButton *mode_thumbnails;
 	ToolButton *mode_list;
 
 	ToolButton *refresh;
 	ToolButton *favorite;
+	ToolButton *show_hidden;
 
 	ToolButton *fav_up;
 	ToolButton *fav_down;
-	ToolButton *fav_rm;
 
 	ItemList *favorites;
 	ItemList *recent;
@@ -147,11 +146,12 @@ private:
 	bool invalidated;
 
 	void update_dir();
+	void update_file_name();
 	void update_file_list();
 	void update_filters();
 
 	void _update_favorites();
-	void _favorite_toggled(bool p_toggle);
+	void _favorite_pressed();
 	void _favorite_selected(int p_idx);
 	void _favorite_move_up();
 	void _favorite_move_down();
@@ -188,10 +188,10 @@ private:
 	virtual void _post_popup();
 
 	void _save_to_recent();
-	//callback function is callback(String p_path,Ref<Texture> preview,Variant udata) preview null if could not load
+	//callback function is callback(String p_path,Ref<Texture2D> preview,Variant udata) preview null if could not load
 
-	void _thumbnail_result(const String &p_path, const Ref<Texture> &p_preview, const Ref<Texture> &p_small_preview, const Variant &p_udata);
-	void _thumbnail_done(const String &p_path, const Ref<Texture> &p_preview, const Ref<Texture> &p_small_preview, const Variant &p_udata);
+	void _thumbnail_result(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small_preview, const Variant &p_udata);
+	void _thumbnail_done(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small_preview, const Variant &p_udata);
 	void _request_single_thumbnail(const String &p_path);
 
 	void _unhandled_input(const Ref<InputEvent> &p_event);
@@ -254,6 +254,7 @@ class EditorLineEditFileChooser : public HBoxContainer {
 	void _browse();
 
 protected:
+	void _notification(int p_what);
 	static void _bind_methods();
 
 public:

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -56,7 +56,7 @@ void AnimationCache::_clear_cache() {
 
 	while (connected_nodes.size()) {
 
-		connected_nodes.front()->get()->disconnect("tree_exiting", this, "_node_exit_tree");
+		connected_nodes.front()->get()->disconnect("tree_exiting", callable_mp(this, &AnimationCache::_node_exit_tree));
 		connected_nodes.erase(connected_nodes.front());
 	}
 	path_cache.clear();
@@ -80,8 +80,7 @@ void AnimationCache::_update_cache() {
 		if (!node) {
 
 			path_cache.push_back(Path());
-			ERR_EXPLAIN("Invalid Track Path in Animation: " + np);
-			ERR_CONTINUE(!node);
+			ERR_CONTINUE_MSG(!node, "Invalid track path in animation '" + np + "'.");
 		}
 
 		Path path;
@@ -92,8 +91,7 @@ void AnimationCache::_update_cache() {
 
 			if (np.get_subname_count() > 1) {
 				path_cache.push_back(Path());
-				ERR_EXPLAIN("Transform tracks can't have a subpath: " + np);
-				ERR_CONTINUE(animation->track_get_type(i) == Animation::TYPE_TRANSFORM);
+				ERR_CONTINUE_MSG(animation->track_get_type(i) == Animation::TYPE_TRANSFORM, "Transform tracks can't have a subpath '" + np + "'.");
 			}
 
 			Spatial *sp = Object::cast_to<Spatial>(node);
@@ -101,8 +99,7 @@ void AnimationCache::_update_cache() {
 			if (!sp) {
 
 				path_cache.push_back(Path());
-				ERR_EXPLAIN("Transform track not of type Spatial: " + np);
-				ERR_CONTINUE(!sp);
+				ERR_CONTINUE_MSG(!sp, "Transform track not of type Spatial '" + np + "'.");
 			}
 
 			if (np.get_subname_count() == 1) {
@@ -113,15 +110,13 @@ void AnimationCache::_update_cache() {
 				if (!sk) {
 
 					path_cache.push_back(Path());
-					ERR_EXPLAIN("Property defined in Transform track, but not a Skeleton!: " + np);
-					ERR_CONTINUE(!sk);
+					ERR_CONTINUE_MSG(!sk, "Property defined in Transform track, but not a Skeleton! '" + np + "'.");
 				}
 
 				int idx = sk->find_bone(ps);
 				if (idx == -1) {
 					path_cache.push_back(Path());
-					ERR_EXPLAIN("Property defined in Transform track, but not a Skeleton Bone!: " + np);
-					ERR_CONTINUE(idx == -1);
+					ERR_CONTINUE_MSG(idx == -1, "Property defined in Transform track, but not a Skeleton Bone! '" + np + "'.");
 				}
 
 				path.bone_idx = idx;
@@ -133,19 +128,19 @@ void AnimationCache::_update_cache() {
 		} else {
 			if (np.get_subname_count() > 0) {
 
-				RES res;
+				RES res2;
 				Vector<StringName> leftover_subpath;
 
 				// We don't want to cache the last resource unless it is a method call
 				bool is_method = animation->track_get_type(i) == Animation::TYPE_METHOD;
-				root->get_node_and_resource(np, res, leftover_subpath, is_method);
+				root->get_node_and_resource(np, res2, leftover_subpath, is_method);
 
-				if (res.is_valid()) {
-					path.resource = res;
+				if (res2.is_valid()) {
+					path.resource = res2;
 				} else {
 					path.node = node;
 				}
-				path.object = res.is_valid() ? res.ptr() : (Object *)node;
+				path.object = res2.is_valid() ? res2.ptr() : (Object *)node;
 				path.subpath = leftover_subpath;
 
 			} else {
@@ -161,8 +156,7 @@ void AnimationCache::_update_cache() {
 			if (np.get_subname_count() == 0) {
 
 				path_cache.push_back(Path());
-				ERR_EXPLAIN("Value Track lacks property: " + np);
-				ERR_CONTINUE(np.get_subname_count() == 0);
+				ERR_CONTINUE_MSG(np.get_subname_count() == 0, "Value Track lacks property: " + np + ".");
 			}
 
 		} else if (animation->track_get_type(i) == Animation::TYPE_METHOD) {
@@ -170,8 +164,7 @@ void AnimationCache::_update_cache() {
 			if (path.subpath.size() != 0) { // Trying to call a method of a non-resource
 
 				path_cache.push_back(Path());
-				ERR_EXPLAIN("Method Track has property: " + np);
-				ERR_CONTINUE(path.subpath.size() != 0);
+				ERR_CONTINUE_MSG(path.subpath.size() != 0, "Method Track has property: " + np + ".");
 			}
 		}
 
@@ -181,7 +174,7 @@ void AnimationCache::_update_cache() {
 
 		if (!connected_nodes.has(path.node)) {
 			connected_nodes.insert(path.node);
-			path.node->connect("tree_exiting", this, "_node_exit_tree", Node::make_binds(path.node), CONNECT_ONESHOT);
+			path.node->connect("tree_exiting", callable_mp(this, &AnimationCache::_node_exit_tree), Node::make_binds(path.node), CONNECT_ONESHOT);
 		}
 	}
 
@@ -225,7 +218,7 @@ void AnimationCache::set_track_value(int p_idx, const Variant &p_value) {
 	p.object->set_indexed(p.subpath, p_value);
 }
 
-void AnimationCache::call_track(int p_idx, const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error) {
+void AnimationCache::call_track(int p_idx, const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
 
 	if (cache_dirty)
 		_update_cache();
@@ -290,7 +283,7 @@ void AnimationCache::set_all(float p_time, float p_delta) {
 
 					Vector<Variant> args = animation->method_track_get_params(i, E->get());
 					StringName name = animation->method_track_get_name(i, E->get());
-					Variant::CallError err;
+					Callable::CallError err;
 
 					if (!args.size()) {
 
@@ -309,7 +302,8 @@ void AnimationCache::set_all(float p_time, float p_delta) {
 				}
 
 			} break;
-			default: {}
+			default: {
+			}
 		}
 	}
 }
@@ -319,18 +313,15 @@ void AnimationCache::set_animation(const Ref<Animation> &p_animation) {
 	_clear_cache();
 
 	if (animation.is_valid())
-		animation->disconnect("changed", this, "_animation_changed");
+		animation->disconnect("changed", callable_mp(this, &AnimationCache::_animation_changed));
 
 	animation = p_animation;
 
 	if (animation.is_valid())
-		animation->connect("changed", this, "_animation_changed");
+		animation->connect("changed", callable_mp(this, &AnimationCache::_animation_changed));
 }
 
 void AnimationCache::_bind_methods() {
-
-	ClassDB::bind_method(D_METHOD("_node_exit_tree"), &AnimationCache::_node_exit_tree);
-	ClassDB::bind_method(D_METHOD("_animation_changed"), &AnimationCache::_animation_changed);
 }
 
 void AnimationCache::set_root(Node *p_root) {

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -110,10 +110,10 @@ public:
 	//_FORCE_INLINE_ SpaceSW* get_owner() { return owner; }
 
 	void set_monitor_callback(ObjectID p_id, const StringName &p_method);
-	_FORCE_INLINE_ bool has_monitor_callback() const { return monitor_callback_id; }
+	_FORCE_INLINE_ bool has_monitor_callback() const { return monitor_callback_id.is_valid(); }
 
 	void set_area_monitor_callback(ObjectID p_id, const StringName &p_method);
-	_FORCE_INLINE_ bool has_area_monitor_callback() const { return area_monitor_callback_id; }
+	_FORCE_INLINE_ bool has_area_monitor_callback() const { return area_monitor_callback_id.is_valid(); }
 
 	_FORCE_INLINE_ void add_body_to_query(Body2DSW *p_body, uint32_t p_body_shape, uint32_t p_area_shape);
 	_FORCE_INLINE_ void remove_body_from_query(Body2DSW *p_body, uint32_t p_body_shape, uint32_t p_area_shape);

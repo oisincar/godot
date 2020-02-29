@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -153,7 +153,7 @@ void VisibilityEnabler::_find_nodes(Node *p_node) {
 	if (enabler[ENABLER_FREEZE_BODIES]) {
 
 		RigidBody *rb = Object::cast_to<RigidBody>(p_node);
-		if (rb && ((rb->get_mode() == RigidBody::MODE_CHARACTER || (rb->get_mode() == RigidBody::MODE_RIGID && !rb->is_able_to_sleep())))) {
+		if (rb && ((rb->get_mode() == RigidBody::MODE_CHARACTER || rb->get_mode() == RigidBody::MODE_RIGID))) {
 
 			add = true;
 			meta = rb->get_mode();
@@ -170,7 +170,7 @@ void VisibilityEnabler::_find_nodes(Node *p_node) {
 
 	if (add) {
 
-		p_node->connect(SceneStringNames::get_singleton()->tree_exiting, this, "_node_removed", varray(p_node), CONNECT_ONESHOT);
+		p_node->connect(SceneStringNames::get_singleton()->tree_exiting, callable_mp(this, &VisibilityEnabler::_node_removed), varray(p_node), CONNECT_ONESHOT);
 		nodes[p_node] = meta;
 		_change_node_state(p_node, false);
 	}
@@ -208,7 +208,7 @@ void VisibilityEnabler::_notification(int p_what) {
 
 			if (!visible)
 				_change_node_state(E->key(), true);
-			E->key()->disconnect(SceneStringNames::get_singleton()->tree_exiting, this, "_node_removed");
+			E->key()->disconnect(SceneStringNames::get_singleton()->tree_exiting, callable_mp(this, &VisibilityEnabler::_node_removed));
 		}
 
 		nodes.clear();
@@ -240,7 +240,6 @@ void VisibilityEnabler::_node_removed(Node *p_node) {
 
 	if (!visible)
 		_change_node_state(p_node, true);
-	p_node->disconnect(SceneStringNames::get_singleton()->tree_exiting, this, "_node_removed");
 	nodes.erase(p_node);
 }
 
@@ -248,7 +247,6 @@ void VisibilityEnabler::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_enabler", "enabler", "enabled"), &VisibilityEnabler::set_enabler);
 	ClassDB::bind_method(D_METHOD("is_enabler_enabled", "enabler"), &VisibilityEnabler::is_enabler_enabled);
-	ClassDB::bind_method(D_METHOD("_node_removed"), &VisibilityEnabler::_node_removed);
 
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "pause_animations"), "set_enabler", "is_enabler_enabled", ENABLER_PAUSE_ANIMATIONS);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "freeze_bodies"), "set_enabler", "is_enabler_enabled", ENABLER_FREEZE_BODIES);

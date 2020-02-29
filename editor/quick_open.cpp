@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -122,7 +122,7 @@ float EditorQuickOpen::_path_cmp(String search, String path) const {
 	return path.to_lower().similarity(search.to_lower());
 }
 
-void EditorQuickOpen::_parse_fs(EditorFileSystemDirectory *efsd, Vector<Pair<String, Ref<Texture> > > &list) {
+void EditorQuickOpen::_parse_fs(EditorFileSystemDirectory *efsd, Vector<Pair<String, Ref<Texture2D> > > &list) {
 
 	if (!add_directories) {
 		for (int i = 0; i < efsd->get_subdir_count(); i++) {
@@ -140,7 +140,7 @@ void EditorQuickOpen::_parse_fs(EditorFileSystemDirectory *efsd, Vector<Pair<Str
 		if (path != "res://") {
 			path = path.substr(6, path.length());
 			if (search_text.is_subsequence_ofi(path)) {
-				Pair<String, Ref<Texture> > pair;
+				Pair<String, Ref<Texture2D> > pair;
 				pair.first = path;
 				pair.second = get_icon("folder", "FileDialog");
 
@@ -169,7 +169,7 @@ void EditorQuickOpen::_parse_fs(EditorFileSystemDirectory *efsd, Vector<Pair<Str
 		file = file.substr(6, file.length());
 
 		if (ClassDB::is_parent_class(efsd->get_file_type(i), base_type) && (search_text.is_subsequence_ofi(file))) {
-			Pair<String, Ref<Texture> > pair;
+			Pair<String, Ref<Texture2D> > pair;
 			pair.first = file;
 			pair.second = get_icon((has_icon(efsd->get_file_type(i), ei) ? efsd->get_file_type(i) : ot), ei);
 			list.push_back(pair);
@@ -184,10 +184,10 @@ void EditorQuickOpen::_parse_fs(EditorFileSystemDirectory *efsd, Vector<Pair<Str
 	}
 }
 
-Vector<Pair<String, Ref<Texture> > > EditorQuickOpen::_sort_fs(Vector<Pair<String, Ref<Texture> > > &list) {
+Vector<Pair<String, Ref<Texture2D> > > EditorQuickOpen::_sort_fs(Vector<Pair<String, Ref<Texture2D> > > &list) {
 
 	String search_text = search_box->get_text();
-	Vector<Pair<String, Ref<Texture> > > sorted_list;
+	Vector<Pair<String, Ref<Texture2D> > > sorted_list;
 
 	if (search_text == String() || list.size() == 0)
 		return list;
@@ -223,7 +223,7 @@ void EditorQuickOpen::_update_search() {
 	search_options->clear();
 	TreeItem *root = search_options->create_item();
 	EditorFileSystemDirectory *efsd = EditorFileSystem::get_singleton()->get_filesystem();
-	Vector<Pair<String, Ref<Texture> > > list;
+	Vector<Pair<String, Ref<Texture2D> > > list;
 
 	_parse_fs(efsd, list);
 	list = _sort_fs(list);
@@ -255,14 +255,19 @@ void EditorQuickOpen::_confirmed() {
 
 void EditorQuickOpen::_notification(int p_what) {
 
-	if (p_what == NOTIFICATION_ENTER_TREE) {
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			connect("confirmed", callable_mp(this, &EditorQuickOpen::_confirmed));
 
-		connect("confirmed", this, "_confirmed");
-
-		search_box->set_right_icon(get_icon("Search", "EditorIcons"));
-		search_box->set_clear_button_enabled(true);
-	} else if (p_what == NOTIFICATION_EXIT_TREE) {
-		disconnect("confirmed", this, "_confirmed");
+			search_box->set_clear_button_enabled(true);
+			[[fallthrough]];
+		}
+		case NOTIFICATION_THEME_CHANGED: {
+			search_box->set_right_icon(get_icon("Search", "EditorIcons"));
+		} break;
+		case NOTIFICATION_EXIT_TREE: {
+			disconnect("confirmed", callable_mp(this, &EditorQuickOpen::_confirmed));
+		} break;
 	}
 }
 
@@ -273,10 +278,6 @@ StringName EditorQuickOpen::get_base_type() const {
 
 void EditorQuickOpen::_bind_methods() {
 
-	ClassDB::bind_method(D_METHOD("_text_changed"), &EditorQuickOpen::_text_changed);
-	ClassDB::bind_method(D_METHOD("_confirmed"), &EditorQuickOpen::_confirmed);
-	ClassDB::bind_method(D_METHOD("_sbox_input"), &EditorQuickOpen::_sbox_input);
-
 	ADD_SIGNAL(MethodInfo("quick_open"));
 }
 
@@ -284,19 +285,20 @@ EditorQuickOpen::EditorQuickOpen() {
 
 	VBoxContainer *vbc = memnew(VBoxContainer);
 	add_child(vbc);
-	//set_child_rect(vbc);
 	search_box = memnew(LineEdit);
 	vbc->add_margin_child(TTR("Search:"), search_box);
-	search_box->connect("text_changed", this, "_text_changed");
-	search_box->connect("gui_input", this, "_sbox_input");
+	search_box->connect("text_changed", callable_mp(this, &EditorQuickOpen::_text_changed));
+	search_box->connect("gui_input", callable_mp(this, &EditorQuickOpen::_sbox_input));
 	search_options = memnew(Tree);
 	vbc->add_margin_child(TTR("Matches:"), search_options, true);
 	get_ok()->set_text(TTR("Open"));
 	get_ok()->set_disabled(true);
 	register_text_enter(search_box);
 	set_hide_on_ok(false);
-	search_options->connect("item_activated", this, "_confirmed");
+	search_options->connect("item_activated", callable_mp(this, &EditorQuickOpen::_confirmed));
 	search_options->set_hide_root(true);
+	search_options->set_hide_folding(true);
+	search_options->add_constant_override("draw_guides", 1);
 	ei = "EditorIcons";
 	ot = "Object";
 	add_directories = false;

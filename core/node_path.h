@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,12 +31,8 @@
 #ifndef NODE_PATH_H
 #define NODE_PATH_H
 
-#include "core/string_db.h"
+#include "core/string_name.h"
 #include "core/ustring.h"
-
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
 
 class NodePath {
 
@@ -58,15 +54,6 @@ class NodePath {
 	void _update_hash_cache() const;
 
 public:
-	_FORCE_INLINE_ StringName get_sname() const {
-
-		if (data && data->path.size() == 1 && data->subpath.empty()) {
-			return data->path[0];
-		} else {
-			return operator String();
-		}
-	}
-
 	bool is_absolute() const;
 	int get_name_count() const;
 	StringName get_name(int p_idx) const;

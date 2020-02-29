@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -35,10 +35,6 @@
 #include "scene/resources/texture.h"
 #include "servers/visual_server.h"
 
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
-
 class Light : public VisualInstance {
 
 	GDCLASS(Light, VisualInstance);
@@ -58,6 +54,7 @@ public:
 		PARAM_SHADOW_SPLIT_1_OFFSET = VS::LIGHT_PARAM_SHADOW_SPLIT_1_OFFSET,
 		PARAM_SHADOW_SPLIT_2_OFFSET = VS::LIGHT_PARAM_SHADOW_SPLIT_2_OFFSET,
 		PARAM_SHADOW_SPLIT_3_OFFSET = VS::LIGHT_PARAM_SHADOW_SPLIT_3_OFFSET,
+		PARAM_SHADOW_FADE_START = VS::LIGHT_PARAM_SHADOW_FADE_START,
 		PARAM_SHADOW_NORMAL_BIAS = VS::LIGHT_PARAM_SHADOW_NORMAL_BIAS,
 		PARAM_SHADOW_BIAS = VS::LIGHT_PARAM_SHADOW_BIAS,
 		PARAM_SHADOW_BIAS_SPLIT_SCALE = VS::LIGHT_PARAM_SHADOW_BIAS_SPLIT_SCALE,
@@ -92,6 +89,7 @@ protected:
 
 	static void _bind_methods();
 	void _notification(int p_what);
+	virtual void _validate_property(PropertyInfo &property) const;
 
 	Light(VisualServer::LightType p_type);
 
@@ -126,7 +124,7 @@ public:
 	BakeMode get_bake_mode() const;
 
 	virtual AABB get_aabb() const;
-	virtual PoolVector<Face3> get_faces(uint32_t p_usage_flags) const;
+	virtual Vector<Face3> get_faces(uint32_t p_usage_flags) const;
 
 	Light();
 	~Light();
@@ -186,15 +184,8 @@ public:
 		SHADOW_CUBE,
 	};
 
-	// omni light
-	enum ShadowDetail {
-		SHADOW_DETAIL_VERTICAL,
-		SHADOW_DETAIL_HORIZONTAL
-	};
-
 private:
 	ShadowMode shadow_mode;
-	ShadowDetail shadow_detail;
 
 protected:
 	static void _bind_methods();
@@ -203,14 +194,10 @@ public:
 	void set_shadow_mode(ShadowMode p_mode);
 	ShadowMode get_shadow_mode() const;
 
-	void set_shadow_detail(ShadowDetail p_detail);
-	ShadowDetail get_shadow_detail() const;
-
 	OmniLight();
 };
 
 VARIANT_ENUM_CAST(OmniLight::ShadowMode)
-VARIANT_ENUM_CAST(OmniLight::ShadowDetail)
 
 class SpotLight : public Light {
 
@@ -220,6 +207,8 @@ protected:
 	static void _bind_methods();
 
 public:
+	virtual String get_configuration_warning() const;
+
 	SpotLight() :
 			Light(VisualServer::LIGHT_SPOT) {}
 };

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -37,6 +37,16 @@
 #include "scene/animation/animation_player.h"
 #include "scene/main/viewport.h"
 #include "scene/scene_string_names.h"
+
+#ifdef TOOLS_ENABLED
+Rect2 VisibilityNotifier2D::_edit_get_rect() const {
+	return rect;
+}
+
+bool VisibilityNotifier2D::_edit_use_rect() const {
+	return true;
+}
+#endif
 
 void VisibilityNotifier2D::_enter_viewport(Viewport *p_viewport) {
 
@@ -82,15 +92,6 @@ void VisibilityNotifier2D::set_rect(const Rect2 &p_rect) {
 	}
 
 	_change_notify("rect");
-}
-
-Rect2 VisibilityNotifier2D::_edit_get_rect() const {
-
-	return rect;
-}
-
-bool VisibilityNotifier2D::_edit_use_rect() const {
-	return true;
 }
 
 Rect2 VisibilityNotifier2D::get_rect() const {
@@ -190,7 +191,7 @@ void VisibilityEnabler2D::_find_nodes(Node *p_node) {
 	if (enabler[ENABLER_FREEZE_BODIES]) {
 
 		RigidBody2D *rb2d = Object::cast_to<RigidBody2D>(p_node);
-		if (rb2d && ((rb2d->get_mode() == RigidBody2D::MODE_CHARACTER || (rb2d->get_mode() == RigidBody2D::MODE_RIGID && !rb2d->is_able_to_sleep())))) {
+		if (rb2d && ((rb2d->get_mode() == RigidBody2D::MODE_CHARACTER || rb2d->get_mode() == RigidBody2D::MODE_RIGID))) {
 
 			add = true;
 			meta = rb2d->get_mode();
@@ -223,7 +224,7 @@ void VisibilityEnabler2D::_find_nodes(Node *p_node) {
 
 	if (add) {
 
-		p_node->connect(SceneStringNames::get_singleton()->tree_exiting, this, "_node_removed", varray(p_node), CONNECT_ONESHOT);
+		p_node->connect(SceneStringNames::get_singleton()->tree_exiting, callable_mp(this, &VisibilityEnabler2D::_node_removed), varray(p_node), CONNECT_ONESHOT);
 		nodes[p_node] = meta;
 		_change_node_state(p_node, false);
 	}
@@ -266,7 +267,7 @@ void VisibilityEnabler2D::_notification(int p_what) {
 
 			if (!visible)
 				_change_node_state(E->key(), true);
-			E->key()->disconnect(SceneStringNames::get_singleton()->tree_exiting, this, "_node_removed");
+			E->key()->disconnect(SceneStringNames::get_singleton()->tree_exiting, callable_mp(this, &VisibilityEnabler2D::_node_removed));
 		}
 
 		nodes.clear();
@@ -319,15 +320,13 @@ void VisibilityEnabler2D::_node_removed(Node *p_node) {
 
 	if (!visible)
 		_change_node_state(p_node, true);
-	//changed to one shot, not needed
-	//p_node->disconnect(SceneStringNames::get_singleton()->exit_scene,this,"_node_removed");
 	nodes.erase(p_node);
 }
 
 String VisibilityEnabler2D::get_configuration_warning() const {
 #ifdef TOOLS_ENABLED
 	if (is_inside_tree() && get_parent() && (get_parent()->get_filename() == String() && get_parent() != get_tree()->get_edited_scene_root())) {
-		return TTR("VisibilityEnable2D works best when used with the edited scene root directly as parent.");
+		return TTR("VisibilityEnabler2D works best when used with the edited scene root directly as parent.");
 	}
 #endif
 	return String();

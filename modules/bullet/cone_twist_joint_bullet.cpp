@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -82,9 +82,8 @@ void ConeTwistJointBullet::set_param(PhysicsServer::ConeTwistJointParam p_param,
 		case PhysicsServer::CONE_TWIST_JOINT_RELAXATION:
 			coneConstraint->setLimit(coneConstraint->getSwingSpan1(), coneConstraint->getSwingSpan2(), coneConstraint->getTwistSpan(), coneConstraint->getLimitSoftness(), coneConstraint->getBiasFactor(), p_value);
 			break;
-		default:
-			ERR_EXPLAIN("This parameter " + itos(p_param) + " is deprecated");
-			WARN_DEPRECATED
+		case PhysicsServer::CONE_TWIST_MAX:
+			// Internal size value, nothing to do.
 			break;
 	}
 }
@@ -101,9 +100,10 @@ real_t ConeTwistJointBullet::get_param(PhysicsServer::ConeTwistJointParam p_para
 			return coneConstraint->getLimitSoftness();
 		case PhysicsServer::CONE_TWIST_JOINT_RELAXATION:
 			return coneConstraint->getRelaxationFactor();
-		default:
-			ERR_EXPLAIN("This parameter " + itos(p_param) + " is deprecated");
-			WARN_DEPRECATED;
+		case PhysicsServer::CONE_TWIST_MAX:
+			// Internal size value, nothing to do.
 			return 0;
 	}
+	// Compiler doesn't seem to notice that all code paths are fulfilled...
+	return 0;
 }

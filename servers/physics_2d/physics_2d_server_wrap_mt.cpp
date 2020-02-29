@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -53,8 +53,6 @@ void Physics2DServerWrapMT::_thread_callback(void *_instance) {
 void Physics2DServerWrapMT::thread_loop() {
 
 	server_thread = Thread::get_caller_id();
-
-	OS::get_singleton()->make_rendering_thread();
 
 	physics_2d_server->init();
 
@@ -109,7 +107,7 @@ void Physics2DServerWrapMT::init() {
 
 	if (create_thread) {
 
-		step_sem = Semaphore::create();
+		step_sem = SemaphoreOld::create();
 		//OS::get_singleton()->release_rendering_thread();
 		if (create_thread) {
 			thread = Thread::create(_thread_callback, this);
@@ -141,6 +139,7 @@ void Physics2DServerWrapMT::finish() {
 	segment_shape_free_cached_ids();
 	circle_shape_free_cached_ids();
 	rectangle_shape_free_cached_ids();
+	capsule_shape_free_cached_ids();
 	convex_polygon_shape_free_cached_ids();
 	concave_polygon_shape_free_cached_ids();
 
@@ -161,7 +160,6 @@ Physics2DServerWrapMT::Physics2DServerWrapMT(Physics2DServer *p_contained, bool 
 	step_sem = NULL;
 	step_pending = 0;
 	step_thread_up = false;
-	alloc_mutex = Mutex::create();
 
 	pool_max_size = GLOBAL_GET("memory/limits/multithreaded_server/rid_pool_prealloc");
 
@@ -178,6 +176,5 @@ Physics2DServerWrapMT::Physics2DServerWrapMT(Physics2DServer *p_contained, bool 
 Physics2DServerWrapMT::~Physics2DServerWrapMT() {
 
 	memdelete(physics_2d_server);
-	memdelete(alloc_mutex);
 	//finish();
 }

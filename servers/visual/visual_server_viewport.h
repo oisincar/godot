@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,6 +31,7 @@
 #ifndef VISUALSERVERVIEWPORT_H
 #define VISUALSERVERVIEWPORT_H
 
+#include "core/rid_owner.h"
 #include "core/self_list.h"
 #include "rasterizer.h"
 #include "servers/arvr/arvr_interface.h"
@@ -38,10 +39,10 @@
 
 class VisualServerViewport {
 public:
-	struct CanvasBase : public RID_Data {
+	struct CanvasBase {
 	};
 
-	struct Viewport : public RID_Data {
+	struct Viewport {
 
 		RID self;
 		RID parent;
@@ -55,14 +56,17 @@ public:
 		VS::ViewportUpdateMode update_mode;
 		RID render_target;
 		RID render_target_texture;
+		RID render_buffers;
+
+		VS::ViewportMSAA msaa;
 
 		int viewport_to_screen;
 		Rect2 viewport_to_screen_rect;
+		bool viewport_render_direct_to_screen;
 
 		bool hide_scenario;
 		bool hide_canvas;
 		bool disable_environment;
-		bool disable_3d;
 		bool disable_3d_by_usage;
 		bool keep_3d_linear;
 
@@ -90,7 +94,8 @@ public:
 			}
 			CanvasKey(const RID &p_canvas, int p_layer, int p_sublayer) {
 				canvas = p_canvas;
-				stacking = ((int64_t)p_layer << 32) + p_sublayer;
+				int64_t sign = p_layer < 0 ? -1 : 1;
+				stacking = sign * (((int64_t)ABS(p_layer)) << 32) + p_sublayer;
 			}
 			int get_layer() const { return stacking >> 32; }
 		};
@@ -114,10 +119,9 @@ public:
 			disable_environment = false;
 			viewport_to_screen = 0;
 			shadow_atlas_size = 0;
-			disable_3d = false;
-			disable_3d_by_usage = false;
 			keep_3d_linear = false;
 			debug_draw = VS::VIEWPORT_DEBUG_DRAW_DISABLED;
+			msaa = VS::VIEWPORT_MSAA_DISABLED;
 			for (int i = 0; i < VS::VIEWPORT_RENDER_INFO_MAX; i++) {
 				render_info[i] = 0;
 			}
@@ -125,7 +129,7 @@ public:
 		}
 	};
 
-	mutable RID_Owner<Viewport> viewport_owner;
+	mutable RID_PtrOwner<Viewport> viewport_owner;
 
 	struct ViewportSort {
 		_FORCE_INLINE_ bool operator()(const Viewport *p_left, const Viewport *p_right) const {
@@ -136,16 +140,15 @@ public:
 			if (left_to_screen == right_to_screen) {
 
 				return p_left->parent == p_right->self;
-			} else {
-				return right_to_screen;
 			}
+			return right_to_screen;
 		}
 	};
 
 	Vector<Viewport *> active_viewports;
 
 private:
-	Color clear_color;
+	void _draw_3d(Viewport *p_viewport, ARVRInterface::Eyes p_eye);
 	void _draw_viewport(Viewport *p_viewport, ARVRInterface::Eyes p_eye = ARVRInterface::EYE_MONO);
 
 public:
@@ -156,6 +159,7 @@ public:
 	void viewport_set_size(RID p_viewport, int p_width, int p_height);
 
 	void viewport_attach_to_screen(RID p_viewport, const Rect2 &p_rect = Rect2(), int p_screen = 0);
+	void viewport_set_render_direct_to_screen(RID p_viewport, bool p_enable);
 	void viewport_detach(RID p_viewport);
 
 	void viewport_set_active(RID p_viewport, bool p_active);
@@ -170,8 +174,6 @@ public:
 	void viewport_set_hide_scenario(RID p_viewport, bool p_hide);
 	void viewport_set_hide_canvas(RID p_viewport, bool p_hide);
 	void viewport_set_disable_environment(RID p_viewport, bool p_disable);
-	void viewport_set_disable_3d(RID p_viewport, bool p_disable);
-	void viewport_set_keep_3d_linear(RID p_viewport, bool p_keep_3d_linear);
 
 	void viewport_attach_camera(RID p_viewport, RID p_camera);
 	void viewport_set_scenario(RID p_viewport, RID p_scenario);
@@ -187,8 +189,6 @@ public:
 	void viewport_set_shadow_atlas_quadrant_subdivision(RID p_viewport, int p_quadrant, int p_subdiv);
 
 	void viewport_set_msaa(RID p_viewport, VS::ViewportMSAA p_msaa);
-	void viewport_set_hdr(RID p_viewport, bool p_enabled);
-	void viewport_set_usage(RID p_viewport, VS::ViewportUsage p_usage);
 
 	virtual int viewport_get_render_info(RID p_viewport, VS::ViewportRenderInfo p_info);
 	virtual void viewport_set_debug_draw(RID p_viewport, VS::ViewportDebugDraw p_draw);

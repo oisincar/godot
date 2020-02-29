@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -270,20 +270,64 @@ void VehicleWheel::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_skidinfo"), &VehicleWheel::get_skidinfo);
 
+	ClassDB::bind_method(D_METHOD("get_rpm"), &VehicleWheel::get_rpm);
+
+	ClassDB::bind_method(D_METHOD("set_engine_force", "engine_force"), &VehicleWheel::set_engine_force);
+	ClassDB::bind_method(D_METHOD("get_engine_force"), &VehicleWheel::get_engine_force);
+
+	ClassDB::bind_method(D_METHOD("set_brake", "brake"), &VehicleWheel::set_brake);
+	ClassDB::bind_method(D_METHOD("get_brake"), &VehicleWheel::get_brake);
+
+	ClassDB::bind_method(D_METHOD("set_steering", "steering"), &VehicleWheel::set_steering);
+	ClassDB::bind_method(D_METHOD("get_steering"), &VehicleWheel::get_steering);
+
+	ADD_GROUP("Per-Wheel Motion", "");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "engine_force", PROPERTY_HINT_RANGE, "0.00,1024.0,0.01,or_greater"), "set_engine_force", "get_engine_force");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "brake", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), "set_brake", "get_brake");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "steering", PROPERTY_HINT_RANGE, "-180,180.0,0.01"), "set_steering", "get_steering");
+	ADD_GROUP("VehicleBody Motion", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_as_traction"), "set_use_as_traction", "is_used_as_traction");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_as_steering"), "set_use_as_steering", "is_used_as_steering");
 	ADD_GROUP("Wheel", "wheel_");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "wheel_roll_influence"), "set_roll_influence", "get_roll_influence");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "wheel_radius"), "set_radius", "get_radius");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "wheel_rest_length"), "set_suspension_rest_length", "get_suspension_rest_length");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "wheel_friction_slip"), "set_friction_slip", "get_friction_slip");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "wheel_roll_influence"), "set_roll_influence", "get_roll_influence");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "wheel_radius"), "set_radius", "get_radius");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "wheel_rest_length"), "set_suspension_rest_length", "get_suspension_rest_length");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "wheel_friction_slip"), "set_friction_slip", "get_friction_slip");
 	ADD_GROUP("Suspension", "suspension_");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "suspension_travel"), "set_suspension_travel", "get_suspension_travel");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "suspension_stiffness"), "set_suspension_stiffness", "get_suspension_stiffness");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "suspension_max_force"), "set_suspension_max_force", "get_suspension_max_force");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "suspension_travel"), "set_suspension_travel", "get_suspension_travel");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "suspension_stiffness"), "set_suspension_stiffness", "get_suspension_stiffness");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "suspension_max_force"), "set_suspension_max_force", "get_suspension_max_force");
 	ADD_GROUP("Damping", "damping_");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "damping_compression"), "set_damping_compression", "get_damping_compression");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "damping_relaxation"), "set_damping_relaxation", "get_damping_relaxation");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "damping_compression"), "set_damping_compression", "get_damping_compression");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "damping_relaxation"), "set_damping_relaxation", "get_damping_relaxation");
+}
+
+void VehicleWheel::set_engine_force(float p_engine_force) {
+
+	m_engineForce = p_engine_force;
+}
+
+float VehicleWheel::get_engine_force() const {
+
+	return m_engineForce;
+}
+
+void VehicleWheel::set_brake(float p_brake) {
+
+	m_brake = p_brake;
+}
+float VehicleWheel::get_brake() const {
+
+	return m_brake;
+}
+
+void VehicleWheel::set_steering(float p_steering) {
+
+	m_steering = p_steering;
+}
+float VehicleWheel::get_steering() const {
+
+	return m_steering;
 }
 
 void VehicleWheel::set_use_as_traction(bool p_enable) {
@@ -311,13 +355,17 @@ float VehicleWheel::get_skidinfo() const {
 	return m_skidInfo;
 }
 
+float VehicleWheel::get_rpm() const {
+
+	return m_rpm;
+}
+
 VehicleWheel::VehicleWheel() {
 
 	steers = false;
 	engine_traction = false;
-
 	m_steering = real_t(0.);
-	//m_engineForce = real_t(0.);
+	m_engineForce = real_t(0.);
 	m_rotation = real_t(0.);
 	m_deltaRotation = real_t(0.);
 	m_brake = real_t(0.);
@@ -367,10 +415,7 @@ void VehicleBody::_update_wheel(int p_idx, PhysicsDirectBodyState *s) {
 	Vector3 fwd = up.cross(right);
 	fwd = fwd.normalized();
 
-	//rotate around steering over de wheelAxleWS
-	real_t steering = wheel.steers ? m_steeringValue : 0.0;
-
-	Basis steeringMat(up, steering);
+	Basis steeringMat(up, wheel.m_steering);
 
 	Basis rotatingMat(right, wheel.m_rotation);
 
@@ -578,7 +623,7 @@ void VehicleBody::_resolve_single_bilateral(PhysicsDirectBodyState *s, const Vec
 	if (p_rollInfluence > 0.0) {
 		// !BAS! But seeing we apply this frame by frame, makes more sense to me to make this time based
 		// keeping in mind our anti roll factor if it is set
-		contactDamping = s->get_step() / p_rollInfluence;
+		contactDamping = MIN(contactDamping, s->get_step() / p_rollInfluence);
 	}
 
 #define ONLY_USE_LINEAR_MASS
@@ -716,12 +761,11 @@ void VehicleBody::_update_friction(PhysicsDirectBodyState *s) {
 			real_t rollingFriction = 0.f;
 
 			if (wheelInfo.m_raycastInfo.m_isInContact) {
-				if (engine_force != 0.f) {
-					rollingFriction = -engine_force * s->get_step();
+				if (wheelInfo.m_engineForce != 0.f) {
+					rollingFriction = -wheelInfo.m_engineForce * s->get_step();
 				} else {
 					real_t defaultRollingFrictionImpulse = 0.f;
-					float cbrake = MAX(wheelInfo.m_brake, brake);
-					real_t maxImpulse = cbrake ? cbrake : defaultRollingFrictionImpulse;
+					real_t maxImpulse = wheelInfo.m_brake ? wheelInfo.m_brake : defaultRollingFrictionImpulse;
 					btVehicleWheelContactPoint contactPt(s, wheelInfo.m_raycastInfo.m_groundObject, wheelInfo.m_raycastInfo.m_contactPointWS, m_forwardWS[wheel], maxImpulse);
 					rollingFriction = _calc_rolling_friction(contactPt);
 				}
@@ -865,11 +909,10 @@ void VehicleBody::_direct_state_changed(Object *p_state) {
 			real_t proj2 = fwd.dot(vel);
 
 			wheel.m_deltaRotation = (proj2 * step) / (wheel.m_wheelRadius);
-			wheel.m_rotation += wheel.m_deltaRotation;
-
-		} else {
-			wheel.m_rotation += wheel.m_deltaRotation;
 		}
+
+		wheel.m_rotation += wheel.m_deltaRotation;
+		wheel.m_rpm = ((wheel.m_deltaRotation / step) * 60) / Math_TAU;
 
 		wheel.m_deltaRotation *= real_t(0.99); //damping of rotation when not in contact
 	}
@@ -880,6 +923,11 @@ void VehicleBody::_direct_state_changed(Object *p_state) {
 void VehicleBody::set_engine_force(float p_engine_force) {
 
 	engine_force = p_engine_force;
+	for (int i = 0; i < wheels.size(); i++) {
+		VehicleWheel &wheelInfo = *wheels[i];
+		if (wheelInfo.engine_traction)
+			wheelInfo.m_engineForce = p_engine_force;
+	}
 }
 
 float VehicleBody::get_engine_force() const {
@@ -890,6 +938,10 @@ float VehicleBody::get_engine_force() const {
 void VehicleBody::set_brake(float p_brake) {
 
 	brake = p_brake;
+	for (int i = 0; i < wheels.size(); i++) {
+		VehicleWheel &wheelInfo = *wheels[i];
+		wheelInfo.m_brake = p_brake;
+	}
 }
 float VehicleBody::get_brake() const {
 
@@ -899,6 +951,11 @@ float VehicleBody::get_brake() const {
 void VehicleBody::set_steering(float p_steering) {
 
 	m_steeringValue = p_steering;
+	for (int i = 0; i < wheels.size(); i++) {
+		VehicleWheel &wheelInfo = *wheels[i];
+		if (wheelInfo.steers)
+			wheelInfo.m_steering = p_steering;
+	}
 }
 float VehicleBody::get_steering() const {
 
@@ -917,13 +974,12 @@ void VehicleBody::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_steering"), &VehicleBody::get_steering);
 
 	ADD_GROUP("Motion", "");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "engine_force", PROPERTY_HINT_RANGE, "0.00,1024.0,0.01,or_greater"), "set_engine_force", "get_engine_force");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "brake", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), "set_brake", "get_brake");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "steering", PROPERTY_HINT_RANGE, "-180,180.0,0.01"), "set_steering", "get_steering");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "engine_force", PROPERTY_HINT_RANGE, "0.00,1024.0,0.01,or_greater"), "set_engine_force", "get_engine_force");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "brake", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), "set_brake", "get_brake");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "steering", PROPERTY_HINT_RANGE, "-180,180.0,0.01"), "set_steering", "get_steering");
 }
 
-VehicleBody::VehicleBody() :
-		RigidBody() {
+VehicleBody::VehicleBody() {
 
 	m_pitchControl = 0;
 	m_currentVehicleSpeedKmHour = real_t(0.);

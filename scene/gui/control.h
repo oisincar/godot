@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -38,9 +38,6 @@
 #include "scene/main/node.h"
 #include "scene/main/timer.h"
 #include "scene/resources/theme.h"
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
 
 class Viewport;
 class Label;
@@ -139,8 +136,8 @@ private:
 		bool operator()(const Control *p_a, const Control *p_b) const {
 			if (p_a->get_canvas_layer() == p_b->get_canvas_layer())
 				return p_b->is_greater_than(p_a);
-			else
-				return p_a->get_canvas_layer() < p_b->get_canvas_layer();
+
+			return p_a->get_canvas_layer() < p_b->get_canvas_layer();
 		}
 	};
 
@@ -201,13 +198,12 @@ private:
 		NodePath focus_next;
 		NodePath focus_prev;
 
-		HashMap<StringName, Ref<Texture> > icon_override;
+		HashMap<StringName, Ref<Texture2D> > icon_override;
 		HashMap<StringName, Ref<Shader> > shader_override;
 		HashMap<StringName, Ref<StyleBox> > style_override;
 		HashMap<StringName, Ref<Font> > font_override;
 		HashMap<StringName, Color> color_override;
 		HashMap<StringName, int> constant_override;
-		Map<Ref<Font>, int> font_refcount;
 
 	} data;
 
@@ -218,6 +214,9 @@ private:
 	Control *_get_focus_neighbour(Margin p_margin, int p_count = 0);
 
 	void _set_anchor(Margin p_margin, float p_anchor);
+	void _set_position(const Point2 &p_point);
+	void _set_global_position(const Point2 &p_point);
+	void _set_size(const Size2 &p_size);
 
 	void _propagate_theme_changed(CanvasItem *p_at, Control *p_owner, bool p_assign = true);
 	void _theme_changed();
@@ -228,15 +227,13 @@ private:
 	void _update_scroll();
 	void _resize(const Size2 &p_size);
 
-	Rect2 _compute_child_rect(const float p_anchors[4], const float p_margins[4]) const;
 	void _compute_margins(Rect2 p_rect, const float p_anchors[4], float (&r_margins)[4]);
+	void _compute_anchors(Rect2 p_rect, const float p_margins[4], float (&r_anchors)[4]);
 
 	void _size_changed();
 	String _get_tooltip() const;
 
-	void _ref_font(Ref<Font> p_sc);
-	void _unref_font(Ref<Font> p_sc);
-	void _font_changed();
+	void _override_changed();
 
 	void _update_canvas_item_transform();
 
@@ -282,6 +279,7 @@ public:
 	};
 
 	/* EDITOR */
+#ifdef TOOLS_ENABLED
 	virtual Dictionary _edit_get_state() const;
 	virtual void _edit_set_state(const Dictionary &p_state);
 
@@ -304,6 +302,7 @@ public:
 	virtual bool _edit_use_pivot() const;
 
 	virtual Size2 _edit_get_minimum_size() const;
+#endif
 
 	void accept_event();
 
@@ -328,7 +327,7 @@ public:
 
 	/* POSITIONING */
 
-	void set_anchors_preset(LayoutPreset p_preset, bool p_keep_margin = true);
+	void set_anchors_preset(LayoutPreset p_preset, bool p_keep_margins = true);
 	void set_margins_preset(LayoutPreset p_preset, LayoutPresetMode p_resize_mode = PRESET_MODE_MINSIZE, int p_margin = 0);
 	void set_anchors_and_margins_preset(LayoutPreset p_preset, LayoutPresetMode p_resize_mode = PRESET_MODE_MINSIZE, int p_margin = 0);
 
@@ -346,12 +345,12 @@ public:
 	Point2 get_begin() const;
 	Point2 get_end() const;
 
-	void set_position(const Point2 &p_point);
-	void set_global_position(const Point2 &p_point);
+	void set_position(const Point2 &p_point, bool p_keep_margins = false);
+	void set_global_position(const Point2 &p_point, bool p_keep_margins = false);
 	Point2 get_position() const;
 	Point2 get_global_position() const;
 
-	void set_size(const Size2 &p_size);
+	void set_size(const Size2 &p_size, bool p_keep_margins = false);
 	Size2 get_size() const;
 
 	Rect2 get_rect() const;
@@ -421,14 +420,14 @@ public:
 
 	/* SKINNING */
 
-	void add_icon_override(const StringName &p_name, const Ref<Texture> &p_icon);
+	void add_icon_override(const StringName &p_name, const Ref<Texture2D> &p_icon);
 	void add_shader_override(const StringName &p_name, const Ref<Shader> &p_shader);
 	void add_style_override(const StringName &p_name, const Ref<StyleBox> &p_style);
 	void add_font_override(const StringName &p_name, const Ref<Font> &p_font);
 	void add_color_override(const StringName &p_name, const Color &p_color);
 	void add_constant_override(const StringName &p_name, int p_constant);
 
-	Ref<Texture> get_icon(const StringName &p_name, const StringName &p_type = StringName()) const;
+	Ref<Texture2D> get_icon(const StringName &p_name, const StringName &p_type = StringName()) const;
 	Ref<Shader> get_shader(const StringName &p_name, const StringName &p_type = StringName()) const;
 	Ref<StyleBox> get_stylebox(const StringName &p_name, const StringName &p_type = StringName()) const;
 	Ref<Font> get_font(const StringName &p_name, const StringName &p_type = StringName()) const;
@@ -486,6 +485,7 @@ public:
 	bool is_visibility_clip_disabled() const;
 
 	virtual void get_argument_options(const StringName &p_function, int p_idx, List<String> *r_options) const;
+	virtual String get_configuration_warning() const;
 
 	Control();
 	~Control();

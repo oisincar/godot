@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -35,15 +35,15 @@
 #include "scene/resources/mesh.h"
 #include "servers/physics_server.h"
 
-void Shape::add_vertices_to_array(PoolVector<Vector3> &array, const Transform &p_xform) {
+void Shape::add_vertices_to_array(Vector<Vector3> &array, const Transform &p_xform) {
 
-	Vector<Vector3> toadd = _gen_debug_mesh_lines();
+	Vector<Vector3> toadd = get_debug_mesh_lines();
 
 	if (toadd.size()) {
 
 		int base = array.size();
 		array.resize(base + toadd.size());
-		PoolVector<Vector3>::Write w = array.write();
+		Vector3 *w = array.ptrw();
 		for (int i = 0; i < toadd.size(); i++) {
 			w[i + base] = p_xform.xform(toadd[i]);
 		}
@@ -64,17 +64,17 @@ Ref<ArrayMesh> Shape::get_debug_mesh() {
 	if (debug_mesh_cache.is_valid())
 		return debug_mesh_cache;
 
-	Vector<Vector3> lines = _gen_debug_mesh_lines();
+	Vector<Vector3> lines = get_debug_mesh_lines();
 
 	debug_mesh_cache = Ref<ArrayMesh>(memnew(ArrayMesh));
 
 	if (!lines.empty()) {
 		//make mesh
-		PoolVector<Vector3> array;
+		Vector<Vector3> array;
 		array.resize(lines.size());
 		{
 
-			PoolVector<Vector3>::Write w = array.write();
+			Vector3 *w = array.ptrw();
 			for (int i = 0; i < lines.size(); i++) {
 				w[i] = lines[i];
 			}
@@ -96,12 +96,17 @@ Ref<ArrayMesh> Shape::get_debug_mesh() {
 	return debug_mesh_cache;
 }
 
+void Shape::_update_shape() {
+	emit_changed();
+	debug_mesh_cache.unref();
+}
+
 void Shape::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_margin", "margin"), &Shape::set_margin);
 	ClassDB::bind_method(D_METHOD("get_margin"), &Shape::get_margin);
 
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "margin", PROPERTY_HINT_RANGE, "0.04,10,0.001"), "set_margin", "get_margin");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "margin", PROPERTY_HINT_RANGE, "0.001,10,0.001"), "set_margin", "get_margin");
 }
 
 Shape::Shape() :

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -36,6 +36,7 @@
 #include "scene/resources/mesh_library.h"
 #include "scene/resources/surface_tool.h"
 #include "scene/scene_string_names.h"
+#include "servers/navigation_server.h"
 #include "servers/visual_server.h"
 
 bool GridMap::_set(const StringName &p_name, const Variant &p_value) {
@@ -48,9 +49,9 @@ bool GridMap::_set(const StringName &p_name, const Variant &p_value) {
 
 		if (d.has("cells")) {
 
-			PoolVector<int> cells = d["cells"];
+			Vector<int> cells = d["cells"];
 			int amount = cells.size();
-			PoolVector<int>::Read r = cells.read();
+			const int *r = cells.ptr();
 			ERR_FAIL_COND_V(amount % 3, false); // not even
 			cell_map.clear();
 			for (int i = 0; i < amount / 3; i++) {
@@ -102,10 +103,10 @@ bool GridMap::_get(const StringName &p_name, Variant &r_ret) const {
 
 		Dictionary d;
 
-		PoolVector<int> cells;
+		Vector<int> cells;
 		cells.resize(cell_map.size() * 3);
 		{
-			PoolVector<int>::Write w = cells.write();
+			int *w = cells.ptrw();
 			int i = 0;
 			for (Map<IndexKey, Cell>::Element *E = cell_map.front(); E; E = E->next(), i++) {
 
@@ -122,7 +123,7 @@ bool GridMap::_get(const StringName &p_name, Variant &r_ret) const {
 		Array ret;
 		ret.resize(baked_meshes.size());
 		for (int i = 0; i < baked_meshes.size(); i++) {
-			ret.push_back(baked_meshes[i].mesh);
+			ret[i] = baked_meshes[i].mesh;
 		}
 		r_ret = ret;
 
@@ -193,24 +194,6 @@ bool GridMap::get_collision_layer_bit(int p_bit) const {
 	return get_collision_layer() & (1 << p_bit);
 }
 
-#ifndef DISABLE_DEPRECATED
-void GridMap::set_theme(const Ref<MeshLibrary> &p_theme) {
-
-	ERR_EXPLAIN("GridMap.theme/set_theme() is deprecated and will be removed in a future version. Use GridMap.mesh_library/set_mesh_library() instead.");
-	WARN_DEPRECATED
-
-	set_mesh_library(p_theme);
-}
-
-Ref<MeshLibrary> GridMap::get_theme() const {
-
-	ERR_EXPLAIN("GridMap.theme/get_theme() is deprecated and will be removed in a future version. Use GridMap.mesh_library/get_mesh_library() instead.");
-	WARN_DEPRECATED
-
-	return get_mesh_library();
-}
-#endif // DISABLE_DEPRECATED
-
 void GridMap::set_mesh_library(const Ref<MeshLibrary> &p_mesh_library) {
 
 	if (!mesh_library.is_null())
@@ -229,10 +212,10 @@ Ref<MeshLibrary> GridMap::get_mesh_library() const {
 }
 
 void GridMap::set_cell_size(const Vector3 &p_size) {
-
 	ERR_FAIL_COND(p_size.x < 0.001 || p_size.y < 0.001 || p_size.z < 0.001);
 	cell_size = p_size;
 	_recreate_octant_data();
+	emit_signal("cell_size_changed", cell_size);
 }
 Vector3 GridMap::get_cell_size() const {
 
@@ -241,6 +224,7 @@ Vector3 GridMap::get_cell_size() const {
 
 void GridMap::set_octant_size(int p_size) {
 
+	ERR_FAIL_COND(p_size == 0);
 	octant_size = p_size;
 	_recreate_octant_data();
 }
@@ -435,12 +419,10 @@ bool GridMap::_octant_update(const OctantKey &p_key) {
 	}
 
 	//erase navigation
-	if (navigation) {
-		for (Map<IndexKey, Octant::NavMesh>::Element *E = g.navmesh_ids.front(); E; E = E->next()) {
-			navigation->navmesh_remove(E->get().id);
-		}
-		g.navmesh_ids.clear();
+	for (Map<IndexKey, Octant::NavMesh>::Element *E = g.navmesh_ids.front(); E; E = E->next()) {
+		NavigationServer::get_singleton()->free(E->get().region);
 	}
+	g.navmesh_ids.clear();
 
 	//erase multimeshes
 
@@ -457,7 +439,7 @@ bool GridMap::_octant_update(const OctantKey &p_key) {
 		return true;
 	}
 
-	PoolVector<Vector3> col_debug;
+	Vector<Vector3> col_debug;
 
 	/*
 	 * foreach item in this octant,
@@ -479,11 +461,6 @@ bool GridMap::_octant_update(const OctantKey &p_key) {
 		Vector3 ofs = _get_offset();
 
 		Transform xform;
-
-		if (clip && ((clip_above && cellpos[clip_axis] > clip_floor) || (!clip_above && cellpos[clip_axis] < clip_floor))) {
-
-		} else {
-		}
 
 		xform.basis.set_orthogonal_index(c.rot);
 		xform.set_origin(cellpos * cell_size + ofs);
@@ -517,12 +494,14 @@ bool GridMap::_octant_update(const OctantKey &p_key) {
 		Ref<NavigationMesh> navmesh = mesh_library->get_item_navmesh(c.item);
 		if (navmesh.is_valid()) {
 			Octant::NavMesh nm;
-			nm.xform = xform;
+			nm.xform = xform * mesh_library->get_item_navmesh_transform(c.item);
 
 			if (navigation) {
-				nm.id = navigation->navmesh_add(navmesh, xform, this);
-			} else {
-				nm.id = -1;
+				RID region = NavigationServer::get_singleton()->region_create();
+				NavigationServer::get_singleton()->region_set_navmesh(region, navmesh);
+				NavigationServer::get_singleton()->region_set_transform(region, navigation->get_global_transform() * nm.xform);
+				NavigationServer::get_singleton()->region_set_map(region, navigation->get_rid());
+				nm.region = region;
 			}
 			g.navmesh_ids[E->get()] = nm;
 		}
@@ -535,7 +514,7 @@ bool GridMap::_octant_update(const OctantKey &p_key) {
 			Octant::MultimeshInstance mmi;
 
 			RID mm = VS::get_singleton()->multimesh_create();
-			VS::get_singleton()->multimesh_allocate(mm, E->get().size(), VS::MULTIMESH_TRANSFORM_3D, VS::MULTIMESH_COLOR_NONE);
+			VS::get_singleton()->multimesh_allocate(mm, E->get().size(), VS::MULTIMESH_TRANSFORM_3D);
 			VS::get_singleton()->multimesh_set_mesh(mm, mesh_library->get_item_mesh(E->key())->get_rid());
 
 			int idx = 0;
@@ -613,10 +592,14 @@ void GridMap::_octant_enter_world(const OctantKey &p_key) {
 	if (navigation && mesh_library.is_valid()) {
 		for (Map<IndexKey, Octant::NavMesh>::Element *F = g.navmesh_ids.front(); F; F = F->next()) {
 
-			if (cell_map.has(F->key()) && F->get().id < 0) {
+			if (cell_map.has(F->key()) && F->get().region.is_valid() == false) {
 				Ref<NavigationMesh> nm = mesh_library->get_item_navmesh(cell_map[F->key()].item);
 				if (nm.is_valid()) {
-					F->get().id = navigation->navmesh_add(nm, F->get().xform, this);
+					RID region = NavigationServer::get_singleton()->region_create();
+					NavigationServer::get_singleton()->region_set_navmesh(region, nm);
+					NavigationServer::get_singleton()->region_set_transform(region, navigation->get_global_transform() * F->get().xform);
+					NavigationServer::get_singleton()->region_set_map(region, navigation->get_rid());
+					F->get().region = region;
 				}
 			}
 		}
@@ -642,9 +625,9 @@ void GridMap::_octant_exit_world(const OctantKey &p_key) {
 	if (navigation) {
 		for (Map<IndexKey, Octant::NavMesh>::Element *F = g.navmesh_ids.front(); F; F = F->next()) {
 
-			if (F->get().id >= 0) {
-				navigation->navmesh_remove(F->get().id);
-				F->get().id = -1;
+			if (F->get().region.is_valid()) {
+				NavigationServer::get_singleton()->free(F->get().region);
+				F->get().region = RID();
 			}
 		}
 	}
@@ -662,13 +645,11 @@ void GridMap::_octant_clean_up(const OctantKey &p_key) {
 
 	PhysicsServer::get_singleton()->free(g.static_body);
 
-	//erase navigation
-	if (navigation) {
-		for (Map<IndexKey, Octant::NavMesh>::Element *E = g.navmesh_ids.front(); E; E = E->next()) {
-			navigation->navmesh_remove(E->get().id);
-		}
-		g.navmesh_ids.clear();
+	// Erase navigation
+	for (Map<IndexKey, Octant::NavMesh>::Element *E = g.navmesh_ids.front(); E; E = E->next()) {
+		NavigationServer::get_singleton()->free(E->get().region);
 	}
+	g.navmesh_ids.clear();
 
 	//erase multimeshes
 
@@ -844,11 +825,6 @@ void GridMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_collision_layer_bit", "bit", "value"), &GridMap::set_collision_layer_bit);
 	ClassDB::bind_method(D_METHOD("get_collision_layer_bit", "bit"), &GridMap::get_collision_layer_bit);
 
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("set_theme", "theme"), &GridMap::set_theme);
-	ClassDB::bind_method(D_METHOD("get_theme"), &GridMap::get_theme);
-#endif // DISABLE_DEPRECATED
-
 	ClassDB::bind_method(D_METHOD("set_mesh_library", "mesh_library"), &GridMap::set_mesh_library);
 	ClassDB::bind_method(D_METHOD("get_mesh_library"), &GridMap::get_mesh_library);
 
@@ -891,10 +867,6 @@ void GridMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("clear_baked_meshes"), &GridMap::clear_baked_meshes);
 	ClassDB::bind_method(D_METHOD("make_baked_meshes", "gen_lightmap_uv", "lightmap_uv_texel_size"), &GridMap::make_baked_meshes, DEFVAL(false), DEFVAL(0.1));
 
-#ifndef DISABLE_DEPRECATED
-	ADD_PROPERTYNO(PropertyInfo(Variant::OBJECT, "theme", PROPERTY_HINT_RESOURCE_TYPE, "MeshLibrary", 0), "set_theme", "get_theme");
-#endif // DISABLE_DEPRECATED
-
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "mesh_library", PROPERTY_HINT_RESOURCE_TYPE, "MeshLibrary"), "set_mesh_library", "get_mesh_library");
 	ADD_GROUP("Cell", "cell_");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "cell_size"), "set_cell_size", "get_cell_size");
@@ -902,12 +874,14 @@ void GridMap::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "cell_center_x"), "set_center_x", "get_center_x");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "cell_center_y"), "set_center_y", "get_center_y");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "cell_center_z"), "set_center_z", "get_center_z");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "cell_scale"), "set_cell_scale", "get_cell_scale");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "cell_scale"), "set_cell_scale", "get_cell_scale");
 	ADD_GROUP("Collision", "collision_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_layer", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_collision_layer", "get_collision_layer");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_mask", PROPERTY_HINT_LAYERS_3D_PHYSICS), "set_collision_mask", "get_collision_mask");
 
 	BIND_CONSTANT(INVALID_CELL_ITEM);
+
+	ADD_SIGNAL(MethodInfo("cell_size_changed", PropertyInfo(Variant::VECTOR3, "cell_size")));
 }
 
 void GridMap::set_clip(bool p_enabled, bool p_clip_above, int p_floor, Vector3::Axis p_axis) {

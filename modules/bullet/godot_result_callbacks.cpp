@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -102,6 +102,9 @@ bool GodotAllConvexResultCallback::needsCollision(btBroadphaseProxy *proxy0) con
 }
 
 btScalar GodotAllConvexResultCallback::addSingleResult(btCollisionWorld::LocalConvexResult &convexResult, bool normalInWorldSpace) {
+	if (count >= m_resultMax)
+		return 1; // not used by bullet
+
 	CollisionObjectBullet *gObj = static_cast<CollisionObjectBullet *>(convexResult.m_hitCollisionObject->getUserPointer());
 
 	PhysicsDirectSpaceState::ShapeResult &result = m_results[count];
@@ -109,7 +112,7 @@ btScalar GodotAllConvexResultCallback::addSingleResult(btCollisionWorld::LocalCo
 	result.shape = convexResult.m_localShapeInfo->m_triangleIndex; // "m_triangleIndex" Is a odd name but contains the compound shape ID
 	result.rid = gObj->get_self();
 	result.collider_id = gObj->get_instance_id();
-	result.collider = 0 == result.collider_id ? NULL : ObjectDB::get_instance(result.collider_id);
+	result.collider = result.collider_id.is_null() ? NULL : ObjectDB::get_instance(result.collider_id);
 
 	++count;
 	return 1; // not used by bullet
@@ -172,6 +175,9 @@ btScalar GodotClosestConvexResultCallback::addSingleResult(btCollisionWorld::Loc
 }
 
 bool GodotAllContactResultCallback::needsCollision(btBroadphaseProxy *proxy0) const {
+	if (m_count >= m_resultMax)
+		return false;
+
 	const bool needs = GodotFilterCallback::test_collision_filters(m_collisionFilterGroup, m_collisionFilterMask, proxy0->m_collisionFilterGroup, proxy0->m_collisionFilterMask);
 	if (needs) {
 		btCollisionObject *btObj = static_cast<btCollisionObject *>(proxy0->m_clientObject);
@@ -214,7 +220,7 @@ btScalar GodotAllContactResultCallback::addSingleResult(btManifoldPoint &cp, con
 		}
 
 		result.collider_id = colObj->get_instance_id();
-		result.collider = 0 == result.collider_id ? NULL : ObjectDB::get_instance(result.collider_id);
+		result.collider = result.collider_id.is_null() ? NULL : ObjectDB::get_instance(result.collider_id);
 		result.rid = colObj->get_self();
 		++m_count;
 	}
@@ -250,6 +256,8 @@ bool GodotContactPairContactResultCallback::needsCollision(btBroadphaseProxy *pr
 
 // Where collide_shape ends up... Populate array with points of contact.
 btScalar GodotContactPairContactResultCallback::addSingleResult(btManifoldPoint &cp, const btCollisionObjectWrapper *colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper *colObj1Wrap, int partId1, int index1) {
+	if (m_count >= m_resultMax)
+		return 1; // not used by bullet
 
     // OS::get_singleton()->print("HELLO FROM INSIDE GODOT :O.", cp.m_localPointA.m_floats[0]);
 
@@ -347,6 +355,7 @@ btScalar GodotRestInfoContactResultCallback::addSingleResult(btManifoldPoint &cp
 			colObj = static_cast<CollisionObjectBullet *>(colObj1Wrap->getCollisionObject()->getUserPointer());
 			m_result->shape = cp.m_index1;
 			B_TO_G(cp.getPositionWorldOnB(), m_result->point);
+			B_TO_G(cp.m_normalWorldOnB, m_result->normal);
 			m_rest_info_bt_point = cp.getPositionWorldOnB();
 			m_rest_info_collision_object = colObj1Wrap->getCollisionObject();
 		} else {
@@ -375,14 +384,6 @@ void GodotDeepPenetrationContactResultCallback::addContactPoint(const btVector3 
 		m_other_compound_shape_index = isSwapped ? m_index0 : m_index1;
 		m_pointWorld = isSwapped ? (pointInWorldOnB + (normalOnBInWorld * depth)) : pointInWorldOnB;
 
-		const btCollisionObjectWrapper *bw0 = m_body0Wrap;
-		if (isSwapped)
-			bw0 = m_body1Wrap;
-
-		if (bw0->getCollisionShape()->getShapeType() == CUSTOM_CONVEX_SHAPE_TYPE) {
-			m_pointNormalWorld = bw0->m_worldTransform.getBasis().transpose() * btVector3(0, 0, 1);
-		} else {
-			m_pointNormalWorld = isSwapped ? normalOnBInWorld * -1 : normalOnBInWorld;
-		}
+		m_pointNormalWorld = isSwapped ? normalOnBInWorld * -1 : normalOnBInWorld;
 	}
 }

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -65,13 +65,14 @@ void SkeletonEditor::create_physical_skeleton() {
 	for (int bone_id = 0; bc > bone_id; ++bone_id) {
 
 		const int parent = skeleton->get_bone_parent(bone_id);
-		const int parent_parent = skeleton->get_bone_parent(parent);
 
 		if (parent < 0) {
 
 			bones_infos.write[bone_id].relative_rest = skeleton->get_bone_rest(bone_id);
 
 		} else {
+
+			const int parent_parent = skeleton->get_bone_parent(parent);
 
 			bones_infos.write[bone_id].relative_rest = bones_infos[parent].relative_rest * skeleton->get_bone_rest(bone_id);
 
@@ -102,8 +103,10 @@ void SkeletonEditor::create_physical_skeleton() {
 
 PhysicalBone *SkeletonEditor::create_physical_bone(int bone_id, int bone_child_id, const Vector<BoneInfo> &bones_infos) {
 
-	real_t half_height(skeleton->get_bone_rest(bone_child_id).origin.length() * 0.5);
-	real_t radius(half_height * 0.2);
+	const Transform child_rest = skeleton->get_bone_rest(bone_child_id);
+
+	const real_t half_height(child_rest.origin.length() * 0.5);
+	const real_t radius(half_height * 0.2);
 
 	CapsuleShape *bone_shape_capsule = memnew(CapsuleShape);
 	bone_shape_capsule->set_height((half_height - radius) * 2);
@@ -113,7 +116,8 @@ PhysicalBone *SkeletonEditor::create_physical_bone(int bone_id, int bone_child_i
 	bone_shape->set_shape(bone_shape_capsule);
 
 	Transform body_transform;
-	body_transform.origin = Vector3(0, 0, -half_height);
+	body_transform.set_look_at(Vector3(0, 0, 0), child_rest.origin, Vector3(0, 1, 0));
+	body_transform.origin = body_transform.basis.xform(Vector3(0, 0, -half_height));
 
 	Transform joint_transform;
 	joint_transform.origin = Vector3(0, 0, half_height);
@@ -133,7 +137,7 @@ void SkeletonEditor::edit(Skeleton *p_node) {
 
 void SkeletonEditor::_notification(int p_what) {
 	if (p_what == NOTIFICATION_ENTER_TREE) {
-		get_tree()->connect("node_removed", this, "_node_removed");
+		get_tree()->connect("node_removed", callable_mp(this, &SkeletonEditor::_node_removed));
 	}
 }
 
@@ -146,11 +150,10 @@ void SkeletonEditor::_node_removed(Node *p_node) {
 }
 
 void SkeletonEditor::_bind_methods() {
-	ClassDB::bind_method("_on_click_option", &SkeletonEditor::_on_click_option);
-	ClassDB::bind_method("_node_removed", &SkeletonEditor::_node_removed);
 }
 
 SkeletonEditor::SkeletonEditor() {
+	skeleton = NULL;
 	options = memnew(MenuButton);
 	SpatialEditor::get_singleton()->add_control_to_menu_panel(options);
 
@@ -159,7 +162,7 @@ SkeletonEditor::SkeletonEditor() {
 
 	options->get_popup()->add_item(TTR("Create physical skeleton"), MENU_OPTION_CREATE_PHYSICAL_SKELETON);
 
-	options->get_popup()->connect("id_pressed", this, "_on_click_option");
+	options->get_popup()->connect("id_pressed", callable_mp(this, &SkeletonEditor::_on_click_option));
 	options->hide();
 }
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,12 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef WEBSOCKETPEER_H
 #define WEBSOCKETPEER_H
 
 #include "core/error_list.h"
 #include "core/io/packet_peer.h"
-#include "core/ring_buffer.h"
 #include "websocket_macros.h"
 
 class WebSocketPeer : public PacketPeer {
@@ -64,6 +64,7 @@ public:
 	virtual IP_Address get_connected_host() const = 0;
 	virtual uint16_t get_connected_port() const = 0;
 	virtual bool was_string_packet() const = 0;
+	virtual void set_no_delay(bool p_enabled) = 0;
 
 	WebSocketPeer();
 	~WebSocketPeer();

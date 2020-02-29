@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -50,9 +50,15 @@
 #include "audio/effects/audio_effect_pitch_shift.h"
 #include "audio/effects/audio_effect_record.h"
 #include "audio/effects/audio_effect_reverb.h"
+#include "audio/effects/audio_effect_spectrum_analyzer.h"
 #include "audio/effects/audio_effect_stereo_enhance.h"
+#include "audio/effects/audio_stream_generator.h"
 #include "audio_server.h"
+#include "camera/camera_feed.h"
+#include "camera_server.h"
 #include "core/script_debugger_remote.h"
+#include "navigation_2d_server.h"
+#include "navigation_server.h"
 #include "physics/physics_server_sw.h"
 #include "physics_2d/physics_2d_server_sw.h"
 #include "physics_2d/physics_2d_server_wrap_mt.h"
@@ -61,27 +67,30 @@
 #include "visual/shader_types.h"
 #include "visual_server.h"
 
-static void _debugger_get_resource_usage(List<ScriptDebuggerRemote::ResourceUsage> *r_usage) {
+static void _debugger_get_resource_usage(ScriptDebuggerRemote::ResourceUsage *r_usage) {
 
 	List<VS::TextureInfo> tinfo;
 	VS::get_singleton()->texture_debug_usage(&tinfo);
 
 	for (List<VS::TextureInfo>::Element *E = tinfo.front(); E; E = E->next()) {
 
-		ScriptDebuggerRemote::ResourceUsage usage;
+		ScriptDebuggerRemote::ResourceInfo usage;
 		usage.path = E->get().path;
 		usage.vram = E->get().bytes;
 		usage.id = E->get().texture;
 		usage.type = "Texture";
-		usage.format = itos(E->get().width) + "x" + itos(E->get().height) + " " + Image::get_format_name(E->get().format);
-		r_usage->push_back(usage);
+		if (E->get().depth == 0) {
+			usage.format = itos(E->get().width) + "x" + itos(E->get().height) + " " + Image::get_format_name(E->get().format);
+		} else {
+			usage.format = itos(E->get().width) + "x" + itos(E->get().height) + "x" + itos(E->get().depth) + " " + Image::get_format_name(E->get().format);
+		}
+		r_usage->infos.push_back(usage);
 	}
 }
 
 ShaderTypes *shader_types = NULL;
 
 PhysicsServer *_createGodotPhysicsCallback() {
-	WARN_PRINT("The GodotPhysics 3D physics engine is deprecated and will be removed in Godot 3.2. You should use the Bullet physics engine instead (configurable in your project settings).");
 	return memnew(PhysicsServerSW);
 }
 
@@ -89,27 +98,48 @@ Physics2DServer *_createGodotPhysics2DCallback() {
 	return Physics2DServerWrapMT::init_server<Physics2DServerSW>();
 }
 
+static bool has_server_feature_callback(const String &p_feature) {
+
+	if (VisualServer::get_singleton()) {
+		if (VisualServer::get_singleton()->has_os_feature(p_feature)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void preregister_server_types() {
+	shader_types = memnew(ShaderTypes);
+}
+
 void register_server_types() {
+
+	OS::get_singleton()->set_has_server_feature_callback(has_server_feature_callback);
 
 	ClassDB::register_virtual_class<VisualServer>();
 	ClassDB::register_class<AudioServer>();
 	ClassDB::register_virtual_class<PhysicsServer>();
 	ClassDB::register_virtual_class<Physics2DServer>();
 	ClassDB::register_class<ARVRServer>();
-
-	shader_types = memnew(ShaderTypes);
+	ClassDB::register_class<CameraServer>();
 
 	ClassDB::register_virtual_class<ARVRInterface>();
 	ClassDB::register_class<ARVRPositionalTracker>();
 
 	ClassDB::register_virtual_class<AudioStream>();
 	ClassDB::register_virtual_class<AudioStreamPlayback>();
+	ClassDB::register_virtual_class<AudioStreamPlaybackResampled>();
 	ClassDB::register_class<AudioStreamMicrophone>();
 	ClassDB::register_class<AudioStreamRandomPitch>();
 	ClassDB::register_virtual_class<AudioEffect>();
+	ClassDB::register_virtual_class<AudioEffectInstance>();
 	ClassDB::register_class<AudioEffectEQ>();
 	ClassDB::register_class<AudioEffectFilter>();
 	ClassDB::register_class<AudioBusLayout>();
+
+	ClassDB::register_class<AudioStreamGenerator>();
+	ClassDB::register_virtual_class<AudioStreamGeneratorPlayback>();
 
 	{
 		//audio effects
@@ -140,8 +170,13 @@ void register_server_types() {
 		ClassDB::register_class<AudioEffectLimiter>();
 		ClassDB::register_class<AudioEffectPitchShift>();
 		ClassDB::register_class<AudioEffectPhaser>();
+
 		ClassDB::register_class<AudioEffectRecord>();
+		ClassDB::register_class<AudioEffectSpectrumAnalyzer>();
+		ClassDB::register_virtual_class<AudioEffectSpectrumAnalyzerInstance>();
 	}
+
+	ClassDB::register_class<CameraFeed>();
 
 	ClassDB::register_virtual_class<Physics2DDirectBodyState>();
 	ClassDB::register_virtual_class<Physics2DDirectSpaceState>();
@@ -167,8 +202,8 @@ void register_server_types() {
 	GLOBAL_DEF(PhysicsServerManager::setting_property_name, "DEFAULT");
 	ProjectSettings::get_singleton()->set_custom_property_info(PhysicsServerManager::setting_property_name, PropertyInfo(Variant::STRING, PhysicsServerManager::setting_property_name, PROPERTY_HINT_ENUM, "DEFAULT"));
 
-	PhysicsServerManager::register_server("GodotPhysics - deprecated", &_createGodotPhysicsCallback);
-	PhysicsServerManager::set_default_server("GodotPhysics - deprecated");
+	PhysicsServerManager::register_server("GodotPhysics", &_createGodotPhysicsCallback);
+	PhysicsServerManager::set_default_server("GodotPhysics");
 }
 
 void unregister_server_types() {
@@ -177,9 +212,13 @@ void unregister_server_types() {
 }
 
 void register_server_singletons() {
+
 	Engine::get_singleton()->add_singleton(Engine::Singleton("VisualServer", VisualServer::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("AudioServer", AudioServer::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("PhysicsServer", PhysicsServer::get_singleton()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("Physics2DServer", Physics2DServer::get_singleton()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("NavigationServer", NavigationServer::get_singleton_mut()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("Navigation2DServer", Navigation2DServer::get_singleton_mut()));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("ARVRServer", ARVRServer::get_singleton()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("CameraServer", CameraServer::get_singleton()));
 }

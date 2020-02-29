@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -37,7 +37,7 @@
 
 class Particles2D : public Node2D {
 private:
-	GDCLASS(Particles2D, Node2D)
+	GDCLASS(Particles2D, Node2D);
 
 public:
 	enum DrawOrder {
@@ -64,8 +64,8 @@ private:
 
 	DrawOrder draw_order;
 
-	Ref<Texture> texture;
-	Ref<Texture> normal_map;
+	Ref<Texture2D> texture;
+	Ref<Texture2D> normal_map;
 
 	void _update_particle_emission_transform();
 
@@ -108,11 +108,11 @@ public:
 	void set_draw_order(DrawOrder p_order);
 	DrawOrder get_draw_order() const;
 
-	void set_texture(const Ref<Texture> &p_texture);
-	Ref<Texture> get_texture() const;
+	void set_texture(const Ref<Texture2D> &p_texture);
+	Ref<Texture2D> get_texture() const;
 
-	void set_normal_map(const Ref<Texture> &p_normal_map);
-	Ref<Texture> get_normal_map() const;
+	void set_normal_map(const Ref<Texture2D> &p_normal_map);
+	Ref<Texture2D> get_normal_map() const;
 
 	virtual String get_configuration_warning() const;
 

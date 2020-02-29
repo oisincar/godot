@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,8 +30,9 @@
 
 #include "mesh_instance_editor_plugin.h"
 
+#include "editor/editor_scale.h"
 #include "scene/3d/collision_shape.h"
-#include "scene/3d/navigation_mesh.h"
+#include "scene/3d/navigation_region.h"
 #include "scene/3d/physics_body.h"
 #include "scene/gui/box_container.h"
 #include "spatial_editor_plugin.h"
@@ -59,10 +60,7 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 	}
 
 	switch (p_option) {
-		case MENU_OPTION_CREATE_STATIC_TRIMESH_BODY:
-		case MENU_OPTION_CREATE_STATIC_CONVEX_BODY: {
-
-			bool trimesh_shape = (p_option == MENU_OPTION_CREATE_STATIC_TRIMESH_BODY);
+		case MENU_OPTION_CREATE_STATIC_TRIMESH_BODY: {
 
 			EditorSelection *editor_selection = EditorNode::get_singleton()->get_editor_selection();
 			UndoRedo *ur = EditorNode::get_singleton()->get_undo_redo();
@@ -70,9 +68,12 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 			List<Node *> selection = editor_selection->get_selected_node_list();
 
 			if (selection.empty()) {
-				Ref<Shape> shape = trimesh_shape ? mesh->create_trimesh_shape() : mesh->create_convex_shape();
-				if (shape.is_null())
+				Ref<Shape> shape = mesh->create_trimesh_shape();
+				if (shape.is_null()) {
+					err_dialog->set_text(TTR("Couldn't create a Trimesh collision shape."));
+					err_dialog->popup_centered_minsize();
 					return;
+				}
 
 				CollisionShape *cshape = memnew(CollisionShape);
 				cshape->set_shape(shape);
@@ -81,11 +82,7 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 
 				Node *owner = node == get_tree()->get_edited_scene_root() ? node : node->get_owner();
 
-				if (trimesh_shape)
-					ur->create_action(TTR("Create Static Trimesh Body"));
-				else
-					ur->create_action(TTR("Create Static Convex Body"));
-
+				ur->create_action(TTR("Create Static Trimesh Body"));
 				ur->add_do_method(node, "add_child", body);
 				ur->add_do_method(body, "set_owner", owner);
 				ur->add_do_method(cshape, "set_owner", owner);
@@ -95,10 +92,7 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 				return;
 			}
 
-			if (trimesh_shape)
-				ur->create_action(TTR("Create Static Trimesh Body"));
-			else
-				ur->create_action(TTR("Create Static Convex Body"));
+			ur->create_action(TTR("Create Static Trimesh Body"));
 
 			for (List<Node *>::Element *E = selection.front(); E; E = E->next()) {
 
@@ -110,7 +104,7 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 				if (m.is_null())
 					continue;
 
-				Ref<Shape> shape = trimesh_shape ? m->create_trimesh_shape() : m->create_convex_shape();
+				Ref<Shape> shape = m->create_trimesh_shape();
 				if (shape.is_null())
 					continue;
 
@@ -132,8 +126,7 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 
 		} break;
 
-		case MENU_OPTION_CREATE_TRIMESH_COLLISION_SHAPE:
-		case MENU_OPTION_CREATE_CONVEX_COLLISION_SHAPE: {
+		case MENU_OPTION_CREATE_TRIMESH_COLLISION_SHAPE: {
 
 			if (node == get_tree()->get_edited_scene_root()) {
 				err_dialog->set_text(TTR("This doesn't work on scene root!"));
@@ -141,9 +134,7 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 				return;
 			}
 
-			bool trimesh_shape = (p_option == MENU_OPTION_CREATE_TRIMESH_COLLISION_SHAPE);
-
-			Ref<Shape> shape = trimesh_shape ? mesh->create_trimesh_shape() : mesh->create_convex_shape();
+			Ref<Shape> shape = mesh->create_trimesh_shape();
 			if (shape.is_null())
 				return;
 
@@ -154,16 +145,82 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 
 			UndoRedo *ur = EditorNode::get_singleton()->get_undo_redo();
 
-			if (trimesh_shape)
-				ur->create_action(TTR("Create Trimesh Shape"));
-			else
-				ur->create_action(TTR("Create Convex Shape"));
+			ur->create_action(TTR("Create Trimesh Static Shape"));
 
 			ur->add_do_method(node->get_parent(), "add_child", cshape);
 			ur->add_do_method(node->get_parent(), "move_child", cshape, node->get_index() + 1);
 			ur->add_do_method(cshape, "set_owner", owner);
 			ur->add_do_reference(cshape);
 			ur->add_undo_method(node->get_parent(), "remove_child", cshape);
+			ur->commit_action();
+		} break;
+		case MENU_OPTION_CREATE_SINGLE_CONVEX_COLLISION_SHAPE: {
+
+			if (node == get_tree()->get_edited_scene_root()) {
+				err_dialog->set_text(TTR("Can't create a single convex collision shape for the scene root."));
+				err_dialog->popup_centered_minsize();
+				return;
+			}
+
+			Ref<Shape> shape = mesh->create_convex_shape();
+
+			if (shape.is_null()) {
+				err_dialog->set_text(TTR("Couldn't create a single convex collision shape."));
+				err_dialog->popup_centered_minsize();
+				return;
+			}
+			UndoRedo *ur = EditorNode::get_singleton()->get_undo_redo();
+
+			ur->create_action(TTR("Create Single Convex Shape"));
+
+			CollisionShape *cshape = memnew(CollisionShape);
+			cshape->set_shape(shape);
+			cshape->set_transform(node->get_transform());
+
+			Node *owner = node->get_owner();
+
+			ur->add_do_method(node->get_parent(), "add_child", cshape);
+			ur->add_do_method(node->get_parent(), "move_child", cshape, node->get_index() + 1);
+			ur->add_do_method(cshape, "set_owner", owner);
+			ur->add_do_reference(cshape);
+			ur->add_undo_method(node->get_parent(), "remove_child", cshape);
+
+			ur->commit_action();
+
+		} break;
+		case MENU_OPTION_CREATE_MULTIPLE_CONVEX_COLLISION_SHAPES: {
+
+			if (node == get_tree()->get_edited_scene_root()) {
+				err_dialog->set_text(TTR("Can't create multiple convex collision shapes for the scene root."));
+				err_dialog->popup_centered_minsize();
+				return;
+			}
+
+			Vector<Ref<Shape> > shapes = mesh->convex_decompose();
+
+			if (!shapes.size()) {
+				err_dialog->set_text(TTR("Couldn't create any collision shapes."));
+				err_dialog->popup_centered_minsize();
+				return;
+			}
+			UndoRedo *ur = EditorNode::get_singleton()->get_undo_redo();
+
+			ur->create_action(TTR("Create Multiple Convex Shapes"));
+
+			for (int i = 0; i < shapes.size(); i++) {
+
+				CollisionShape *cshape = memnew(CollisionShape);
+				cshape->set_shape(shapes[i]);
+				cshape->set_transform(node->get_transform());
+
+				Node *owner = node->get_owner();
+
+				ur->add_do_method(node->get_parent(), "add_child", cshape);
+				ur->add_do_method(node->get_parent(), "move_child", cshape, node->get_index() + 1);
+				ur->add_do_method(cshape, "set_owner", owner);
+				ur->add_do_reference(cshape);
+				ur->add_undo_method(node->get_parent(), "remove_child", cshape);
+			}
 			ur->commit_action();
 
 		} break;
@@ -176,7 +233,7 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 				return;
 
 			nmesh->create_from_mesh(mesh);
-			NavigationMeshInstance *nmi = memnew(NavigationMeshInstance);
+			NavigationRegion *nmi = memnew(NavigationRegion);
 			nmi->set_navigation_mesh(nmesh);
 
 			Node *owner = node == get_tree()->get_edited_scene_root() ? node : node->get_owner();
@@ -198,14 +255,14 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 		} break;
 		case MENU_OPTION_CREATE_UV2: {
 
-			Ref<ArrayMesh> mesh = node->get_mesh();
-			if (!mesh.is_valid()) {
+			Ref<ArrayMesh> mesh2 = node->get_mesh();
+			if (!mesh2.is_valid()) {
 				err_dialog->set_text(TTR("Contained Mesh is not of type ArrayMesh."));
 				err_dialog->popup_centered_minsize();
 				return;
 			}
 
-			Error err = mesh->lightmap_unwrap(node->get_global_transform());
+			Error err = mesh2->lightmap_unwrap(node->get_global_transform());
 			if (err != OK) {
 				err_dialog->set_text(TTR("UV Unwrap failed, mesh may not be manifold?"));
 				err_dialog->popup_centered_minsize();
@@ -214,8 +271,8 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 
 		} break;
 		case MENU_OPTION_DEBUG_UV1: {
-			Ref<Mesh> mesh = node->get_mesh();
-			if (!mesh.is_valid()) {
+			Ref<Mesh> mesh2 = node->get_mesh();
+			if (!mesh2.is_valid()) {
 				err_dialog->set_text(TTR("No mesh to debug."));
 				err_dialog->popup_centered_minsize();
 				return;
@@ -223,8 +280,8 @@ void MeshInstanceEditor::_menu_option(int p_option) {
 			_create_uv_lines(0);
 		} break;
 		case MENU_OPTION_DEBUG_UV2: {
-			Ref<Mesh> mesh = node->get_mesh();
-			if (!mesh.is_valid()) {
+			Ref<Mesh> mesh2 = node->get_mesh();
+			if (!mesh2.is_valid()) {
 				err_dialog->set_text(TTR("No mesh to debug."));
 				err_dialog->popup_centered_minsize();
 				return;
@@ -270,24 +327,24 @@ void MeshInstanceEditor::_create_uv_lines(int p_layer) {
 			continue;
 		Array a = mesh->surface_get_arrays(i);
 
-		PoolVector<Vector2> uv = a[p_layer == 0 ? Mesh::ARRAY_TEX_UV : Mesh::ARRAY_TEX_UV2];
+		Vector<Vector2> uv = a[p_layer == 0 ? Mesh::ARRAY_TEX_UV : Mesh::ARRAY_TEX_UV2];
 		if (uv.size() == 0) {
 			err_dialog->set_text(TTR("Model has no UV in this layer"));
 			err_dialog->popup_centered_minsize();
 			return;
 		}
 
-		PoolVector<Vector2>::Read r = uv.read();
+		const Vector2 *r = uv.ptr();
 
-		PoolVector<int> indices = a[Mesh::ARRAY_INDEX];
-		PoolVector<int>::Read ri;
+		Vector<int> indices = a[Mesh::ARRAY_INDEX];
+		const int *ri;
 
 		int ic;
 		bool use_indices;
 
 		if (indices.size()) {
 			ic = indices.size();
-			ri = indices.read();
+			ri = indices.ptr();
 			use_indices = true;
 		} else {
 			ic = uv.size();
@@ -378,35 +435,37 @@ void MeshInstanceEditor::_create_outline_mesh() {
 }
 
 void MeshInstanceEditor::_bind_methods() {
-
-	ClassDB::bind_method("_menu_option", &MeshInstanceEditor::_menu_option);
-	ClassDB::bind_method("_create_outline_mesh", &MeshInstanceEditor::_create_outline_mesh);
-	ClassDB::bind_method("_debug_uv_draw", &MeshInstanceEditor::_debug_uv_draw);
 }
 
 MeshInstanceEditor::MeshInstanceEditor() {
 
 	options = memnew(MenuButton);
+	options->set_switch_on_hover(true);
 	SpatialEditor::get_singleton()->add_control_to_menu_panel(options);
 
 	options->set_text(TTR("Mesh"));
 	options->set_icon(EditorNode::get_singleton()->get_gui_base()->get_icon("MeshInstance", "EditorIcons"));
 
 	options->get_popup()->add_item(TTR("Create Trimesh Static Body"), MENU_OPTION_CREATE_STATIC_TRIMESH_BODY);
-	options->get_popup()->add_item(TTR("Create Convex Static Body"), MENU_OPTION_CREATE_STATIC_CONVEX_BODY);
+	options->get_popup()->set_item_tooltip(options->get_popup()->get_item_count() - 1, TTR("Creates a StaticBody and assigns a polygon-based collision shape to it automatically.\nThis is the most accurate (but slowest) option for collision detection."));
 	options->get_popup()->add_separator();
 	options->get_popup()->add_item(TTR("Create Trimesh Collision Sibling"), MENU_OPTION_CREATE_TRIMESH_COLLISION_SHAPE);
-	options->get_popup()->add_item(TTR("Create Convex Collision Sibling"), MENU_OPTION_CREATE_CONVEX_COLLISION_SHAPE);
+	options->get_popup()->set_item_tooltip(options->get_popup()->get_item_count() - 1, TTR("Creates a polygon-based collision shape.\nThis is the most accurate (but slowest) option for collision detection."));
+	options->get_popup()->add_item(TTR("Create Single Convex Collision Sibling"), MENU_OPTION_CREATE_SINGLE_CONVEX_COLLISION_SHAPE);
+	options->get_popup()->set_item_tooltip(options->get_popup()->get_item_count() - 1, TTR("Creates a single convex collision shape.\nThis is the fastest (but least accurate) option for collision detection."));
+	options->get_popup()->add_item(TTR("Create Multiple Convex Collision Siblings"), MENU_OPTION_CREATE_MULTIPLE_CONVEX_COLLISION_SHAPES);
+	options->get_popup()->set_item_tooltip(options->get_popup()->get_item_count() - 1, TTR("Creates a polygon-based collision shape.\nThis is a performance middle-ground between the two above options."));
 	options->get_popup()->add_separator();
 	options->get_popup()->add_item(TTR("Create Navigation Mesh"), MENU_OPTION_CREATE_NAVMESH);
 	options->get_popup()->add_separator();
 	options->get_popup()->add_item(TTR("Create Outline Mesh..."), MENU_OPTION_CREATE_OUTLINE_MESH);
+	options->get_popup()->set_item_tooltip(options->get_popup()->get_item_count() - 1, TTR("Creates a static outline mesh. The outline mesh will have its normals flipped automatically.\nThis can be used instead of the SpatialMaterial Grow property when using that property isn't possible."));
 	options->get_popup()->add_separator();
 	options->get_popup()->add_item(TTR("View UV1"), MENU_OPTION_DEBUG_UV1);
 	options->get_popup()->add_item(TTR("View UV2"), MENU_OPTION_DEBUG_UV2);
 	options->get_popup()->add_item(TTR("Unwrap UV2 for Lightmap/AO"), MENU_OPTION_CREATE_UV2);
 
-	options->get_popup()->connect("id_pressed", this, "_menu_option");
+	options->get_popup()->connect("id_pressed", callable_mp(this, &MeshInstanceEditor::_menu_option));
 
 	outline_dialog = memnew(ConfirmationDialog);
 	outline_dialog->set_title(TTR("Create Outline Mesh"));
@@ -424,17 +483,17 @@ MeshInstanceEditor::MeshInstanceEditor() {
 	outline_dialog_vbc->add_margin_child(TTR("Outline Size:"), outline_size);
 
 	add_child(outline_dialog);
-	outline_dialog->connect("confirmed", this, "_create_outline_mesh");
+	outline_dialog->connect("confirmed", callable_mp(this, &MeshInstanceEditor::_create_outline_mesh));
 
 	err_dialog = memnew(AcceptDialog);
 	add_child(err_dialog);
 
 	debug_uv_dialog = memnew(AcceptDialog);
-	debug_uv_dialog->set_title("UV Channel Debug");
+	debug_uv_dialog->set_title(TTR("UV Channel Debug"));
 	add_child(debug_uv_dialog);
 	debug_uv = memnew(Control);
 	debug_uv->set_custom_minimum_size(Size2(600, 600) * EDSCALE);
-	debug_uv->connect("draw", this, "_debug_uv_draw");
+	debug_uv->connect("draw", callable_mp(this, &MeshInstanceEditor::_debug_uv_draw));
 	debug_uv_dialog->add_child(debug_uv);
 }
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -48,6 +48,12 @@ public:
 		bool use_parent_material;
 		int index;
 		bool children_order_dirty;
+		int ysort_children_count;
+		Color ysort_modulate;
+		Transform2D ysort_xform;
+		Vector2 ysort_pos;
+		VS::CanvasItemTextureFilter texture_filter;
+		VS::CanvasItemTextureRepeat texture_repeat;
 
 		Vector<Item *> child_items;
 
@@ -61,6 +67,11 @@ public:
 			use_parent_material = false;
 			z_relative = true;
 			index = 0;
+			ysort_children_count = -1;
+			ysort_xform = Transform2D();
+			ysort_pos = Vector2();
+			texture_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT;
+			texture_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT;
 		}
 	};
 
@@ -76,14 +87,14 @@ public:
 
 		_FORCE_INLINE_ bool operator()(const Item *p_left, const Item *p_right) const {
 
-			if (Math::abs(p_left->xform.elements[2].y - p_right->xform.elements[2].y) < CMP_EPSILON)
-				return p_left->xform.elements[2].x < p_right->xform.elements[2].x;
-			else
-				return p_left->xform.elements[2].y < p_right->xform.elements[2].y;
+			if (Math::is_equal_approx(p_left->ysort_pos.y, p_right->ysort_pos.y))
+				return p_left->ysort_pos.x < p_right->ysort_pos.x;
+
+			return p_left->ysort_pos.y < p_right->ysort_pos.y;
 		}
 	};
 
-	struct LightOccluderPolygon : RID_Data {
+	struct LightOccluderPolygon {
 
 		bool active;
 		Rect2 aabb;
@@ -97,9 +108,9 @@ public:
 		}
 	};
 
-	RID_Owner<LightOccluderPolygon> canvas_light_occluder_polygon_owner;
+	RID_PtrOwner<LightOccluderPolygon> canvas_light_occluder_polygon_owner;
 
-	RID_Owner<RasterizerCanvas::LightOccluderInstance> canvas_light_occluder_owner;
+	RID_PtrOwner<RasterizerCanvas::LightOccluderInstance> canvas_light_occluder_owner;
 
 	struct Canvas : public VisualServerViewport::CanvasBase {
 
@@ -120,6 +131,8 @@ public:
 		bool children_order_dirty;
 		Vector<ChildItem> child_items;
 		Color modulate;
+		RID parent;
+		float parent_scale;
 
 		int find_item(Item *p_item) {
 			for (int i = 0; i < child_items.size(); i++) {
@@ -137,24 +150,32 @@ public:
 		Canvas() {
 			modulate = Color(1, 1, 1, 1);
 			children_order_dirty = true;
+			parent_scale = 1.0;
 		}
 	};
 
-	RID_Owner<Canvas> canvas_owner;
-	RID_Owner<Item> canvas_item_owner;
-	RID_Owner<RasterizerCanvas::Light> canvas_light_owner;
+	mutable RID_PtrOwner<Canvas> canvas_owner;
+	RID_PtrOwner<Item> canvas_item_owner;
+	RID_PtrOwner<RasterizerCanvas::Light> canvas_light_owner;
+
+	bool disable_scale;
 
 private:
-	void _render_canvas_item_tree(Item *p_canvas_item, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, RasterizerCanvas::Light *p_lights);
-	void _render_canvas_item(Item *p_canvas_item, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, int p_z, RasterizerCanvas::Item **z_list, RasterizerCanvas::Item **z_last_list, Item *p_canvas_clip, Item *p_material_owner);
+	void _render_canvas_item_tree(RID p_to_render_target, Canvas::ChildItem *p_child_items, int p_child_item_count, Item *p_canvas_item, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, RasterizerCanvas::Light *p_lights);
+	void _cull_canvas_item(Item *p_canvas_item, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, int p_z, RasterizerCanvas::Item **z_list, RasterizerCanvas::Item **z_last_list, Item *p_canvas_clip, Item *p_material_owner);
 	void _light_mask_canvas_items(int p_z, RasterizerCanvas::Item *p_canvas_item, RasterizerCanvas::Light *p_masked_lights);
 
+	RasterizerCanvas::Item **z_list;
+	RasterizerCanvas::Item **z_last_list;
+
 public:
-	void render_canvas(Canvas *p_canvas, const Transform2D &p_transform, RasterizerCanvas::Light *p_lights, RasterizerCanvas::Light *p_masked_lights, const Rect2 &p_clip_rect);
+	void render_canvas(RID p_render_target, Canvas *p_canvas, const Transform2D &p_transform, RasterizerCanvas::Light *p_lights, RasterizerCanvas::Light *p_masked_lights, const Rect2 &p_clip_rect);
 
 	RID canvas_create();
 	void canvas_set_item_mirroring(RID p_canvas, RID p_item, const Point2 &p_mirroring);
 	void canvas_set_modulate(RID p_canvas, const Color &p_color);
+	void canvas_set_parent(RID p_canvas, RID p_parent, float p_scale);
+	void canvas_set_disable_scale(bool p_disable);
 
 	RID canvas_item_create();
 	void canvas_item_set_parent(RID p_item, RID p_parent);
@@ -173,20 +194,23 @@ public:
 
 	void canvas_item_set_update_when_visible(RID p_item, bool p_update);
 
-	void canvas_item_add_line(RID p_item, const Point2 &p_from, const Point2 &p_to, const Color &p_color, float p_width = 1.0, bool p_antialiased = false);
-	void canvas_item_add_polyline(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width = 1.0, bool p_antialiased = false);
-	void canvas_item_add_multiline(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width = 1.0, bool p_antialiased = false);
+	void canvas_item_set_default_texture_filter(RID p_item, VS::CanvasItemTextureFilter p_filter);
+	void canvas_item_set_default_texture_repeat(RID p_item, VS::CanvasItemTextureRepeat p_repeat);
+
+	void canvas_item_add_line(RID p_item, const Point2 &p_from, const Point2 &p_to, const Color &p_color, float p_width = 1.0);
+	void canvas_item_add_polyline(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width = 1.0);
+	void canvas_item_add_multiline(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width = 1.0);
 	void canvas_item_add_rect(RID p_item, const Rect2 &p_rect, const Color &p_color);
 	void canvas_item_add_circle(RID p_item, const Point2 &p_pos, float p_radius, const Color &p_color);
-	void canvas_item_add_texture_rect(RID p_item, const Rect2 &p_rect, RID p_texture, bool p_tile = false, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false, RID p_normal_map = RID());
-	void canvas_item_add_texture_rect_region(RID p_item, const Rect2 &p_rect, RID p_texture, const Rect2 &p_src_rect, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false, RID p_normal_map = RID(), bool p_clip_uv = false);
-	void canvas_item_add_nine_patch(RID p_item, const Rect2 &p_rect, const Rect2 &p_source, RID p_texture, const Vector2 &p_topleft, const Vector2 &p_bottomright, VS::NinePatchAxisMode p_x_axis_mode = VS::NINE_PATCH_STRETCH, VS::NinePatchAxisMode p_y_axis_mode = VS::NINE_PATCH_STRETCH, bool p_draw_center = true, const Color &p_modulate = Color(1, 1, 1), RID p_normal_map = RID());
-	void canvas_item_add_primitive(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs, RID p_texture, float p_width = 1.0, RID p_normal_map = RID());
-	void canvas_item_add_polygon(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs = Vector<Point2>(), RID p_texture = RID(), RID p_normal_map = RID(), bool p_antialiased = false);
-	void canvas_item_add_triangle_array(RID p_item, const Vector<int> &p_indices, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs = Vector<Point2>(), const Vector<int> &p_bones = Vector<int>(), const Vector<float> &p_weights = Vector<float>(), RID p_texture = RID(), int p_count = -1, RID p_normal_map = RID());
-	void canvas_item_add_mesh(RID p_item, const RID &p_mesh, RID p_texture = RID(), RID p_normal_map = RID());
-	void canvas_item_add_multimesh(RID p_item, RID p_mesh, RID p_texture = RID(), RID p_normal_map = RID());
-	void canvas_item_add_particles(RID p_item, RID p_particles, RID p_texture, RID p_normal);
+	void canvas_item_add_texture_rect(RID p_item, const Rect2 &p_rect, RID p_texture, bool p_tile = false, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false, RID p_normal_map = RID(), RID p_specular_map = RID(), const Color &p_specular_color_shininess = Color(), VS::CanvasItemTextureFilter p_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT, VS::CanvasItemTextureRepeat p_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT);
+	void canvas_item_add_texture_rect_region(RID p_item, const Rect2 &p_rect, RID p_texture, const Rect2 &p_src_rect, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false, RID p_normal_map = RID(), RID p_specular_map = RID(), const Color &p_specular_color_shininess = Color(), bool p_clip_uv = false, VS::CanvasItemTextureFilter p_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT, VS::CanvasItemTextureRepeat p_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT);
+	void canvas_item_add_nine_patch(RID p_item, const Rect2 &p_rect, const Rect2 &p_source, RID p_texture, const Vector2 &p_topleft, const Vector2 &p_bottomright, VS::NinePatchAxisMode p_x_axis_mode = VS::NINE_PATCH_STRETCH, VS::NinePatchAxisMode p_y_axis_mode = VS::NINE_PATCH_STRETCH, bool p_draw_center = true, const Color &p_modulate = Color(1, 1, 1), RID p_normal_map = RID(), RID p_specular_map = RID(), const Color &p_specular_color_shininess = Color(), VS::CanvasItemTextureFilter p_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT, VS::CanvasItemTextureRepeat p_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT);
+	void canvas_item_add_primitive(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs, RID p_texture, float p_width = 1.0, RID p_normal_map = RID(), RID p_specular_map = RID(), const Color &p_specular_color_shininess = Color(), VS::CanvasItemTextureFilter p_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT, VS::CanvasItemTextureRepeat p_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT);
+	void canvas_item_add_polygon(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs = Vector<Point2>(), RID p_texture = RID(), RID p_normal_map = RID(), RID p_specular_map = RID(), const Color &p_specular_color_shininess = Color(), VS::CanvasItemTextureFilter p_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT, VS::CanvasItemTextureRepeat p_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT);
+	void canvas_item_add_triangle_array(RID p_item, const Vector<int> &p_indices, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs = Vector<Point2>(), const Vector<int> &p_bones = Vector<int>(), const Vector<float> &p_weights = Vector<float>(), RID p_texture = RID(), int p_count = -1, RID p_normal_map = RID(), RID p_specular_map = RID(), const Color &p_specular_color_shininess = Color(), VS::CanvasItemTextureFilter p_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT, VS::CanvasItemTextureRepeat p_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT);
+	void canvas_item_add_mesh(RID p_item, const RID &p_mesh, const Transform2D &p_transform = Transform2D(), const Color &p_modulate = Color(1, 1, 1), RID p_texture = RID(), RID p_normal_map = RID(), RID p_specular_map = RID(), const Color &p_specular_color_shininess = Color(), VS::CanvasItemTextureFilter p_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT, VS::CanvasItemTextureRepeat p_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT);
+	void canvas_item_add_multimesh(RID p_item, RID p_mesh, RID p_texture = RID(), RID p_normal_map = RID(), RID p_specular_map = RID(), const Color &p_specular_color_shininess = Color(), VS::CanvasItemTextureFilter p_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT, VS::CanvasItemTextureRepeat p_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT);
+	void canvas_item_add_particles(RID p_item, RID p_particles, RID p_texture, RID p_normal_map, RID p_specular_map = RID(), const Color &p_specular_color_shininess = Color(), VS::CanvasItemTextureFilter p_filter = VS::CANVAS_ITEM_TEXTURE_FILTER_DEFAULT, VS::CanvasItemTextureRepeat p_repeat = VS::CANVAS_ITEM_TEXTURE_REPEAT_DEFAULT);
 	void canvas_item_add_set_transform(RID p_item, const Transform2D &p_transform);
 	void canvas_item_add_clip_ignore(RID p_item, bool p_ignore);
 	void canvas_item_set_sort_children_by_y(RID p_item, bool p_enable);
@@ -221,7 +245,6 @@ public:
 
 	void canvas_light_set_shadow_enabled(RID p_light, bool p_enabled);
 	void canvas_light_set_shadow_buffer_size(RID p_light, int p_size);
-	void canvas_light_set_shadow_gradient_length(RID p_light, float p_length);
 	void canvas_light_set_shadow_filter(RID p_light, VS::CanvasLightShadowFilter p_filter);
 	void canvas_light_set_shadow_color(RID p_light, const Color &p_color);
 	void canvas_light_set_shadow_smooth(RID p_light, float p_smooth);
@@ -234,13 +257,14 @@ public:
 	void canvas_light_occluder_set_light_mask(RID p_occluder, int p_mask);
 
 	RID canvas_occluder_polygon_create();
-	void canvas_occluder_polygon_set_shape(RID p_occluder_polygon, const PoolVector<Vector2> &p_shape, bool p_closed);
-	void canvas_occluder_polygon_set_shape_as_lines(RID p_occluder_polygon, const PoolVector<Vector2> &p_shape);
+	void canvas_occluder_polygon_set_shape(RID p_occluder_polygon, const Vector<Vector2> &p_shape, bool p_closed);
+	void canvas_occluder_polygon_set_shape_as_lines(RID p_occluder_polygon, const Vector<Vector2> &p_shape);
 
 	void canvas_occluder_polygon_set_cull_mode(RID p_occluder_polygon, VS::CanvasOccluderPolygonCullMode p_mode);
 
 	bool free(RID p_rid);
 	VisualServerCanvas();
+	~VisualServerCanvas();
 };
 
 #endif // VISUALSERVERCANVAS_H

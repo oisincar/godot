@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -34,10 +34,6 @@
 #include "core/rid.h"
 #include "scene/2d/node_2d.h"
 #include "scene/resources/texture.h"
-
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
 
 class CPUParticles2D : public Node2D {
 private:
@@ -68,15 +64,18 @@ public:
 
 	enum Flags {
 		FLAG_ALIGN_Y_TO_VELOCITY,
+		FLAG_ROTATE_Y, // Unused, but exposed for consistency with 3D.
+		FLAG_DISABLE_Z, // Unused, but exposed for consistency with 3D.
 		FLAG_MAX
 	};
 
 	enum EmissionShape {
 		EMISSION_SHAPE_POINT,
-		EMISSION_SHAPE_CIRCLE,
+		EMISSION_SHAPE_SPHERE,
 		EMISSION_SHAPE_RECTANGLE,
 		EMISSION_SHAPE_POINTS,
 		EMISSION_SHAPE_DIRECTED_POINTS,
+		EMISSION_SHAPE_MAX
 	};
 
 private:
@@ -94,6 +93,7 @@ private:
 		float hue_rot_rand;
 		float anim_offset_rand;
 		float time;
+		float lifetime;
 		Color base_color;
 
 		uint32_t seed;
@@ -103,19 +103,20 @@ private:
 	float inactive_time;
 	float frame_remainder;
 	int cycle;
+	bool redraw;
 
 	RID mesh;
 	RID multimesh;
 
-	PoolVector<Particle> particles;
-	PoolVector<float> particle_data;
-	PoolVector<int> particle_order;
+	Vector<Particle> particles;
+	Vector<float> particle_data;
+	Vector<int> particle_order;
 
 	struct SortLifetime {
 		const Particle *particles;
 
 		bool operator()(int p_a, int p_b) const {
-			return particles[p_a].time < particles[p_b].time;
+			return particles[p_a].time > particles[p_b].time;
 		}
 	};
 
@@ -136,20 +137,23 @@ private:
 	float pre_process_time;
 	float explosiveness_ratio;
 	float randomness_ratio;
+	float lifetime_randomness;
 	float speed_scale;
 	bool local_coords;
 	int fixed_fps;
 	bool fractional_delta;
 
+	Transform2D inv_emission_transform;
+
 	DrawOrder draw_order;
 
-	Ref<Texture> texture;
-	Ref<Texture> normalmap;
+	Ref<Texture2D> texture;
+	Ref<Texture2D> normalmap;
 
 	////////
 
+	Vector2 direction;
 	float spread;
-	float flatness;
 
 	float parameters[PARAM_MAX];
 	float randomness[PARAM_MAX];
@@ -163,21 +167,26 @@ private:
 	EmissionShape emission_shape;
 	float emission_sphere_radius;
 	Vector2 emission_rect_extents;
-	PoolVector<Vector2> emission_points;
-	PoolVector<Vector2> emission_normals;
-	PoolVector<Color> emission_colors;
+	Vector<Vector2> emission_points;
+	Vector<Vector2> emission_normals;
+	Vector<Color> emission_colors;
 	int emission_point_count;
 
 	Vector2 gravity;
 
+	void _update_internal();
 	void _particles_process(float p_delta);
 	void _update_particle_data_buffer();
 
-	Mutex *update_mutex;
+	Mutex update_mutex;
 
 	void _update_render_thread();
 
-	void _generate_mesh_texture();
+	void _update_mesh_texture();
+
+	void _set_redraw(bool p_redraw);
+
+	void _texture_changed();
 
 protected:
 	static void _bind_methods();
@@ -192,6 +201,7 @@ public:
 	void set_pre_process_time(float p_time);
 	void set_explosiveness_ratio(float p_ratio);
 	void set_randomness_ratio(float p_ratio);
+	void set_lifetime_randomness(float p_random);
 	void set_visibility_aabb(const Rect2 &p_aabb);
 	void set_use_local_coordinates(bool p_enable);
 	void set_speed_scale(float p_scale);
@@ -203,6 +213,7 @@ public:
 	float get_pre_process_time() const;
 	float get_explosiveness_ratio() const;
 	float get_randomness_ratio() const;
+	float get_lifetime_randomness() const;
 	Rect2 get_visibility_aabb() const;
 	bool get_use_local_coordinates() const;
 	float get_speed_scale() const;
@@ -219,28 +230,19 @@ public:
 	void set_draw_passes(int p_count);
 	int get_draw_passes() const;
 
-	void set_texture(const Ref<Texture> &p_texture);
-	Ref<Texture> get_texture() const;
+	void set_texture(const Ref<Texture2D> &p_texture);
+	Ref<Texture2D> get_texture() const;
 
-	void set_h_frames(int p_frames);
-	int get_h_frames();
-
-	void set_v_frames(int p_frames);
-	int get_v_frames();
-
-	void set_loop_animation(bool p_loop);
-	bool get_loop_animation() const;
-
-	void set_normalmap(const Ref<Texture> &p_normalmap);
-	Ref<Texture> get_normalmap() const;
+	void set_normalmap(const Ref<Texture2D> &p_normalmap);
+	Ref<Texture2D> get_normalmap() const;
 
 	///////////////////
 
+	void set_direction(Vector2 p_direction);
+	Vector2 get_direction() const;
+
 	void set_spread(float p_spread);
 	float get_spread() const;
-
-	void set_flatness(float p_flatness);
-	float get_flatness() const;
 
 	void set_param(Parameter p_param, float p_value);
 	float get_param(Parameter p_param) const;
@@ -254,7 +256,7 @@ public:
 	void set_color(const Color &p_color);
 	Color get_color() const;
 
-	void set_color_ramp(const Ref<Gradient> &p_texture);
+	void set_color_ramp(const Ref<Gradient> &p_ramp);
 	Ref<Gradient> get_color_ramp() const;
 
 	void set_particle_flag(Flags p_flag, bool p_enable);
@@ -263,17 +265,17 @@ public:
 	void set_emission_shape(EmissionShape p_shape);
 	void set_emission_sphere_radius(float p_radius);
 	void set_emission_rect_extents(Vector2 p_extents);
-	void set_emission_points(const PoolVector<Vector2> &p_points);
-	void set_emission_normals(const PoolVector<Vector2> &p_normals);
-	void set_emission_colors(const PoolVector<Color> &p_colors);
+	void set_emission_points(const Vector<Vector2> &p_points);
+	void set_emission_normals(const Vector<Vector2> &p_normals);
+	void set_emission_colors(const Vector<Color> &p_colors);
 	void set_emission_point_count(int p_count);
 
 	EmissionShape get_emission_shape() const;
 	float get_emission_sphere_radius() const;
 	Vector2 get_emission_rect_extents() const;
-	PoolVector<Vector2> get_emission_points() const;
-	PoolVector<Vector2> get_emission_normals() const;
-	PoolVector<Color> get_emission_colors() const;
+	Vector<Vector2> get_emission_points() const;
+	Vector<Vector2> get_emission_normals() const;
+	Vector<Color> get_emission_colors() const;
 	int get_emission_point_count() const;
 
 	void set_gravity(const Vector2 &p_gravity);

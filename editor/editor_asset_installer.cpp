@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -34,6 +34,7 @@
 #include "core/os/dir_access.h"
 #include "core/os/file_access.h"
 #include "editor_node.h"
+#include "progress_dialog.h"
 
 void EditorAssetInstaller::_update_subitems(TreeItem *p_item, bool p_check, bool p_first) {
 
@@ -90,7 +91,7 @@ void EditorAssetInstaller::open(const String &p_path, int p_depth) {
 	unzFile pkg = unzOpen2(p_path.utf8().get_data(), &io);
 	if (!pkg) {
 
-		error->set_text(TTR("Error opening package file, not in zip format."));
+		error->set_text(TTR("Error opening package file, not in ZIP format."));
 		return;
 	}
 
@@ -109,23 +110,19 @@ void EditorAssetInstaller::open(const String &p_path, int p_depth) {
 		ret = unzGoToNextFile(pkg);
 	}
 
-	Map<String, Ref<Texture> > extension_guess;
+	Map<String, Ref<Texture2D> > extension_guess;
 	{
-		extension_guess["png"] = get_icon("Texture", "EditorIcons");
-		extension_guess["jpg"] = get_icon("Texture", "EditorIcons");
-		extension_guess["tex"] = get_icon("Texture", "EditorIcons");
-		extension_guess["atlastex"] = get_icon("Texture", "EditorIcons");
-		extension_guess["dds"] = get_icon("Texture", "EditorIcons");
+		extension_guess["png"] = get_icon("ImageTexture", "EditorIcons");
+		extension_guess["jpg"] = get_icon("ImageTexture", "EditorIcons");
+		extension_guess["atlastex"] = get_icon("AtlasTexture", "EditorIcons");
 		extension_guess["scn"] = get_icon("PackedScene", "EditorIcons");
 		extension_guess["tscn"] = get_icon("PackedScene", "EditorIcons");
-		extension_guess["xml"] = get_icon("PackedScene", "EditorIcons");
-		extension_guess["xscn"] = get_icon("PackedScene", "EditorIcons");
-		extension_guess["material"] = get_icon("Material", "EditorIcons");
-		extension_guess["shd"] = get_icon("Shader", "EditorIcons");
+		extension_guess["shader"] = get_icon("Shader", "EditorIcons");
 		extension_guess["gd"] = get_icon("GDScript", "EditorIcons");
+		extension_guess["vs"] = get_icon("VisualScript", "EditorIcons");
 	}
 
-	Ref<Texture> generic_extension = get_icon("Object", "EditorIcons");
+	Ref<Texture2D> generic_extension = get_icon("Object", "EditorIcons");
 
 	unzClose(pkg);
 
@@ -198,7 +195,7 @@ void EditorAssetInstaller::open(const String &p_path, int p_depth) {
 			String res_path = "res://" + path;
 			if (FileAccess::exists(res_path)) {
 				ti->set_custom_color(0, get_color("error_color", "Editor"));
-				ti->set_tooltip(0, res_path + " (Already Exists)");
+				ti->set_tooltip(0, vformat(TTR("%s (Already Exists)"), res_path));
 				ti->set_checked(0, false);
 			} else {
 				ti->set_tooltip(0, res_path);
@@ -221,7 +218,7 @@ void EditorAssetInstaller::ok_pressed() {
 	unzFile pkg = unzOpen2(package_path.utf8().get_data(), &io);
 	if (!pkg) {
 
-		error->set_text(TTR("Error opening package file, not in zip format."));
+		error->set_text(TTR("Error opening package file, not in ZIP format."));
 		return;
 	}
 
@@ -291,11 +288,11 @@ void EditorAssetInstaller::ok_pressed() {
 	unzClose(pkg);
 
 	if (failed_files.size()) {
-		String msg = "The following files failed extraction from package:\n\n";
+		String msg = TTR("The following files failed extraction from package:") + "\n\n";
 		for (int i = 0; i < failed_files.size(); i++) {
 
 			if (i > 15) {
-				msg += "\nAnd " + itos(failed_files.size() - i) + " more files.";
+				msg += "\n" + vformat(TTR("And %s more files."), itos(failed_files.size() - i));
 				break;
 			}
 			msg += failed_files[i];
@@ -304,14 +301,12 @@ void EditorAssetInstaller::ok_pressed() {
 			EditorNode::get_singleton()->show_warning(msg);
 	} else {
 		if (EditorNode::get_singleton() != NULL)
-			EditorNode::get_singleton()->show_warning(TTR("Package Installed Successfully!"), TTR("Success!"));
+			EditorNode::get_singleton()->show_warning(TTR("Package installed successfully!"), TTR("Success!"));
 	}
 	EditorFileSystem::get_singleton()->scan_changes();
 }
 
 void EditorAssetInstaller::_bind_methods() {
-
-	ClassDB::bind_method("_item_edited", &EditorAssetInstaller::_item_edited);
 }
 
 EditorAssetInstaller::EditorAssetInstaller() {
@@ -320,8 +315,8 @@ EditorAssetInstaller::EditorAssetInstaller() {
 	add_child(vb);
 
 	tree = memnew(Tree);
-	vb->add_margin_child("Package Contents:", tree, true);
-	tree->connect("item_edited", this, "_item_edited");
+	vb->add_margin_child(TTR("Package Contents:"), tree, true);
+	tree->connect("item_edited", callable_mp(this, &EditorAssetInstaller::_item_edited));
 
 	error = memnew(AcceptDialog);
 	add_child(error);

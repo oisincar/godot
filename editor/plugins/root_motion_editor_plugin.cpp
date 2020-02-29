@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,7 +39,7 @@ void EditorPropertyRootMotion::_confirmed() {
 		return;
 
 	NodePath path = ti->get_metadata(0);
-	emit_signal("property_changed", get_edited_property(), path);
+	emit_changed(get_edited_property(), path);
 	update_property();
 	filter_dialog->hide(); //may come from activated
 }
@@ -131,7 +131,7 @@ void EditorPropertyRootMotion::_node_assign() {
 			Skeleton *skeleton = Object::cast_to<Skeleton>(node);
 			if (skeleton && skeleton->find_bone(concat) != -1) {
 				//path in skeleton
-				String bone = concat;
+				const String &bone = concat;
 				int idx = skeleton->find_bone(bone);
 				List<String> bone_path;
 				while (idx != -1) {
@@ -195,7 +195,7 @@ void EditorPropertyRootMotion::_node_assign() {
 
 void EditorPropertyRootMotion::_node_clear() {
 
-	emit_signal("property_changed", get_edited_property(), NodePath());
+	emit_changed(get_edited_property(), NodePath());
 	update_property();
 }
 
@@ -205,8 +205,8 @@ void EditorPropertyRootMotion::update_property() {
 
 	assign->set_tooltip(p);
 	if (p == NodePath()) {
-		assign->set_icon(Ref<Texture>());
-		assign->set_text(TTR("Assign.."));
+		assign->set_icon(Ref<Texture2D>());
+		assign->set_text(TTR("Assign..."));
 		assign->set_flat(false);
 		return;
 	}
@@ -222,7 +222,7 @@ void EditorPropertyRootMotion::update_property() {
 	}
 
 	if (!base_node || !base_node->has_node(p)) {
-		assign->set_icon(Ref<Texture>());
+		assign->set_icon(Ref<Texture2D>());
 		assign->set_text(p);
 		return;
 	}
@@ -242,16 +242,12 @@ void EditorPropertyRootMotion::setup(const NodePath &p_base_hint) {
 void EditorPropertyRootMotion::_notification(int p_what) {
 
 	if (p_what == NOTIFICATION_ENTER_TREE || p_what == NOTIFICATION_THEME_CHANGED) {
-		Ref<Texture> t = get_icon("Clear", "EditorIcons");
+		Ref<Texture2D> t = get_icon("Clear", "EditorIcons");
 		clear->set_icon(t);
 	}
 }
 
 void EditorPropertyRootMotion::_bind_methods() {
-
-	ClassDB::bind_method(D_METHOD("_confirmed"), &EditorPropertyRootMotion::_confirmed);
-	ClassDB::bind_method(D_METHOD("_node_assign"), &EditorPropertyRootMotion::_node_assign);
-	ClassDB::bind_method(D_METHOD("_node_clear"), &EditorPropertyRootMotion::_node_clear);
 }
 
 EditorPropertyRootMotion::EditorPropertyRootMotion() {
@@ -262,24 +258,24 @@ EditorPropertyRootMotion::EditorPropertyRootMotion() {
 	assign->set_flat(true);
 	assign->set_h_size_flags(SIZE_EXPAND_FILL);
 	assign->set_clip_text(true);
-	assign->connect("pressed", this, "_node_assign");
+	assign->connect("pressed", callable_mp(this, &EditorPropertyRootMotion::_node_assign));
 	hbc->add_child(assign);
 
 	clear = memnew(Button);
 	clear->set_flat(true);
-	clear->connect("pressed", this, "_node_clear");
+	clear->connect("pressed", callable_mp(this, &EditorPropertyRootMotion::_node_clear));
 	hbc->add_child(clear);
 
 	filter_dialog = memnew(ConfirmationDialog);
 	add_child(filter_dialog);
 	filter_dialog->set_title(TTR("Edit Filtered Tracks:"));
-	filter_dialog->connect("confirmed", this, "_confirmed");
+	filter_dialog->connect("confirmed", callable_mp(this, &EditorPropertyRootMotion::_confirmed));
 
 	filters = memnew(Tree);
 	filter_dialog->add_child(filters);
 	filters->set_v_size_flags(SIZE_EXPAND_FILL);
 	filters->set_hide_root(true);
-	filters->connect("item_activated", this, "_confirmed");
+	filters->connect("item_activated", callable_mp(this, &EditorPropertyRootMotion::_confirmed));
 	//filters->connect("item_edited", this, "_filter_edited");
 }
 //////////////////////////

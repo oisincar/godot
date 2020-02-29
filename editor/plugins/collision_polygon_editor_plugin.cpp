@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -47,7 +47,7 @@ void Polygon3DEditor::_notification(int p_what) {
 			button_create->set_icon(get_icon("Edit", "EditorIcons"));
 			button_edit->set_icon(get_icon("MovePoint", "EditorIcons"));
 			button_edit->set_pressed(true);
-			get_tree()->connect("node_removed", this, "_node_removed");
+			get_tree()->connect("node_removed", callable_mp(this, &Polygon3DEditor::_node_removed));
 
 		} break;
 		case NOTIFICATION_PROCESS: {
@@ -95,7 +95,7 @@ void Polygon3DEditor::_menu_option(int p_option) {
 
 void Polygon3DEditor::_wip_close() {
 
-	undo_redo->create_action(TTR("Create Poly3D"));
+	undo_redo->create_action(TTR("Create Polygon3D"));
 	undo_redo->add_undo_method(node, "set_polygon", node->call("get_polygon"));
 	undo_redo->add_do_method(node, "set_polygon", wip);
 	undo_redo->add_do_method(this, "_polygon_draw");
@@ -144,7 +144,7 @@ bool Polygon3DEditor::forward_spatial_gui_input(Camera *p_camera, const Ref<Inpu
 		Vector<Vector2> poly = node->call("get_polygon");
 
 		//first check if a point is to be added (segment split)
-		real_t grab_threshold = EDITOR_DEF("editors/poly_editor/point_grab_radius", 8);
+		real_t grab_threshold = EDITOR_GET("editors/poly_editor/point_grab_radius");
 
 		switch (mode) {
 
@@ -346,8 +346,10 @@ bool Polygon3DEditor::forward_spatial_gui_input(Camera *p_camera, const Ref<Inpu
 				snap_ignore = false;
 			}
 
-			if (!snap_ignore) {
-				cpoint = CanvasItemEditor::get_singleton()->snap_point(cpoint);
+			if (!snap_ignore && SpatialEditor::get_singleton()->is_snap_enabled()) {
+				cpoint = cpoint.snapped(Vector2(
+						SpatialEditor::get_singleton()->get_translate_snap(),
+						SpatialEditor::get_singleton()->get_translate_snap()));
 			}
 			edited_point_pos = cpoint;
 
@@ -382,7 +384,7 @@ void Polygon3DEditor::_polygon_draw() {
 
 	imgeom->clear();
 	imgeom->set_material_override(line_material);
-	imgeom->begin(Mesh::PRIMITIVE_LINES, Ref<Texture>());
+	imgeom->begin(Mesh::PRIMITIVE_LINES, Ref<Texture2D>());
 
 	Rect2 rect;
 
@@ -461,20 +463,18 @@ void Polygon3DEditor::_polygon_draw() {
 
 	imgeom->end();
 
-	while (m->get_surface_count()) {
-		m->surface_remove(0);
-	}
+	m->clear_surfaces();
 
 	if (poly.size() == 0)
 		return;
 
 	Array a;
 	a.resize(Mesh::ARRAY_MAX);
-	PoolVector<Vector3> va;
+	Vector<Vector3> va;
 	{
 
 		va.resize(poly.size());
-		PoolVector<Vector3>::Write w = va.write();
+		Vector3 *w = va.ptrw();
 		for (int i = 0; i < poly.size(); i++) {
 
 			Vector2 p, p2;
@@ -518,26 +518,24 @@ void Polygon3DEditor::edit(Node *p_collision_polygon) {
 
 void Polygon3DEditor::_bind_methods() {
 
-	ClassDB::bind_method(D_METHOD("_menu_option"), &Polygon3DEditor::_menu_option);
 	ClassDB::bind_method(D_METHOD("_polygon_draw"), &Polygon3DEditor::_polygon_draw);
-	ClassDB::bind_method(D_METHOD("_node_removed"), &Polygon3DEditor::_node_removed);
 }
 
 Polygon3DEditor::Polygon3DEditor(EditorNode *p_editor) {
 
 	node = NULL;
 	editor = p_editor;
-	undo_redo = editor->get_undo_redo();
+	undo_redo = EditorNode::get_undo_redo();
 
 	add_child(memnew(VSeparator));
 	button_create = memnew(ToolButton);
 	add_child(button_create);
-	button_create->connect("pressed", this, "_menu_option", varray(MODE_CREATE));
+	button_create->connect("pressed", callable_mp(this, &Polygon3DEditor::_menu_option), varray(MODE_CREATE));
 	button_create->set_toggle_mode(true);
 
 	button_edit = memnew(ToolButton);
 	add_child(button_edit);
-	button_edit->connect("pressed", this, "_menu_option", varray(MODE_EDIT));
+	button_edit->connect("pressed", callable_mp(this, &Polygon3DEditor::_menu_option), varray(MODE_EDIT));
 	button_edit->set_toggle_mode(true);
 
 	mode = MODE_EDIT;
@@ -545,23 +543,22 @@ Polygon3DEditor::Polygon3DEditor(EditorNode *p_editor) {
 	imgeom = memnew(ImmediateGeometry);
 	imgeom->set_transform(Transform(Basis(), Vector3(0, 0, 0.00001)));
 
-	line_material = Ref<SpatialMaterial>(memnew(SpatialMaterial));
-	line_material->set_flag(SpatialMaterial::FLAG_UNSHADED, true);
-	line_material->set_line_width(3.0);
-	line_material->set_feature(SpatialMaterial::FEATURE_TRANSPARENT, true);
-	line_material->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
-	line_material->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
+	line_material = Ref<StandardMaterial3D>(memnew(StandardMaterial3D));
+	line_material->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
+	line_material->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
+	line_material->set_flag(StandardMaterial3D::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
+	line_material->set_flag(StandardMaterial3D::FLAG_SRGB_VERTEX_COLOR, true);
 	line_material->set_albedo(Color(1, 1, 1));
 
-	handle_material = Ref<SpatialMaterial>(memnew(SpatialMaterial));
-	handle_material->set_flag(SpatialMaterial::FLAG_UNSHADED, true);
-	handle_material->set_flag(SpatialMaterial::FLAG_USE_POINT_SIZE, true);
-	handle_material->set_feature(SpatialMaterial::FEATURE_TRANSPARENT, true);
-	handle_material->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
-	handle_material->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
-	Ref<Texture> handle = editor->get_gui_base()->get_icon("Editor3DHandle", "EditorIcons");
+	handle_material = Ref<StandardMaterial3D>(memnew(StandardMaterial3D));
+	handle_material->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
+	handle_material->set_flag(StandardMaterial3D::FLAG_USE_POINT_SIZE, true);
+	handle_material->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
+	handle_material->set_flag(StandardMaterial3D::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
+	handle_material->set_flag(StandardMaterial3D::FLAG_SRGB_VERTEX_COLOR, true);
+	Ref<Texture2D> handle = editor->get_gui_base()->get_icon("Editor3DHandle", "EditorIcons");
 	handle_material->set_point_size(handle->get_width());
-	handle_material->set_texture(SpatialMaterial::TEXTURE_ALBEDO, handle);
+	handle_material->set_texture(StandardMaterial3D::TEXTURE_ALBEDO, handle);
 
 	pointsm = memnew(MeshInstance);
 	imgeom->add_child(pointsm);

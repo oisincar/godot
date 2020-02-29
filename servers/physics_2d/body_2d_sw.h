@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -52,6 +52,7 @@ class Body2DSW : public CollisionObject2DSW {
 	real_t gravity_scale;
 
 	real_t mass;
+	real_t inertia;
 	real_t bounce;
 	real_t friction;
 
@@ -399,7 +400,7 @@ public:
 		return body->contacts[p_contact_idx].collider_pos;
 	}
 	virtual ObjectID get_contact_collider_id(int p_contact_idx) const {
-		ERR_FAIL_INDEX_V(p_contact_idx, body->contact_count, 0);
+		ERR_FAIL_INDEX_V(p_contact_idx, body->contact_count, ObjectID());
 		return body->contacts[p_contact_idx].collider_instance_id;
 	}
 	virtual int get_contact_collider_shape(int p_contact_idx) const {

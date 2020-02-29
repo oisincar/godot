@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -50,6 +50,7 @@ private:
 	SpatialIndexer *indexer;
 	Ref<Environment> environment;
 	Ref<Environment> fallback_environment;
+	Ref<CameraEffects> camera_effects;
 
 protected:
 	static void _bind_methods();
@@ -76,6 +77,9 @@ public:
 
 	void set_fallback_environment(const Ref<Environment> &p_environment);
 	Ref<Environment> get_fallback_environment() const;
+
+	void set_camera_effects(const Ref<CameraEffects> &p_camera_effects);
+	Ref<CameraEffects> get_camera_effects() const;
 
 	void get_camera_list(List<Camera *> *r_cameras);
 

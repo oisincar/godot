@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -51,15 +51,15 @@ void CPUParticlesEditor::_menu_option(int p_option) {
 
 	switch (p_option) {
 
-		case MENU_OPTION_CREATE_EMISSION_VOLUME_FROM_MESH: {
-
-			emission_file_dialog->popup_centered_ratio();
-
-		} break;
-
 		case MENU_OPTION_CREATE_EMISSION_VOLUME_FROM_NODE: {
 
 			emission_tree_dialog->popup_centered_ratio();
+
+		} break;
+
+		case MENU_OPTION_RESTART: {
+
+			node->restart();
 
 		} break;
 	}
@@ -74,8 +74,8 @@ void CPUParticlesEditor::edit(CPUParticles *p_particles) {
 void CPUParticlesEditor::_generate_emission_points() {
 
 	/// hacer codigo aca
-	PoolVector<Vector3> points;
-	PoolVector<Vector3> normals;
+	Vector<Vector3> points;
+	Vector<Vector3> normals;
 
 	if (!_generate(points, normals)) {
 		return;
@@ -92,8 +92,6 @@ void CPUParticlesEditor::_generate_emission_points() {
 }
 
 void CPUParticlesEditor::_bind_methods() {
-
-	ClassDB::bind_method("_menu_option", &CPUParticlesEditor::_menu_option);
 }
 
 CPUParticlesEditor::CPUParticlesEditor() {
@@ -101,13 +99,15 @@ CPUParticlesEditor::CPUParticlesEditor() {
 	particles_editor_hb = memnew(HBoxContainer);
 	SpatialEditor::get_singleton()->add_control_to_menu_panel(particles_editor_hb);
 	options = memnew(MenuButton);
+	options->set_switch_on_hover(true);
 	particles_editor_hb->add_child(options);
 	particles_editor_hb->hide();
 
 	options->set_text(TTR("CPUParticles"));
-	options->get_popup()->add_item(TTR("Create Emission Points From Mesh"), MENU_OPTION_CREATE_EMISSION_VOLUME_FROM_MESH);
 	options->get_popup()->add_item(TTR("Create Emission Points From Node"), MENU_OPTION_CREATE_EMISSION_VOLUME_FROM_NODE);
-	options->get_popup()->connect("id_pressed", this, "_menu_option");
+	options->get_popup()->add_separator();
+	options->get_popup()->add_item(TTR("Restart"), MENU_OPTION_RESTART);
+	options->get_popup()->connect("id_pressed", callable_mp(this, &CPUParticlesEditor::_menu_option));
 }
 
 void CPUParticlesEditorPlugin::edit(Object *p_object) {

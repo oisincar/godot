@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -48,7 +48,7 @@ SHAPE_CUSTOM, ///< Server-Implementation based custom shape, calling shape_creat
 
 class Shape2DSW;
 
-class ShapeOwner2DSW : public RID_Data {
+class ShapeOwner2DSW {
 public:
 	virtual void _shape_changed() = 0;
 	virtual void remove_shape(Shape2DSW *p_shape) = 0;
@@ -56,7 +56,7 @@ public:
 	virtual ~ShapeOwner2DSW() {}
 };
 
-class Shape2DSW : public RID_Data {
+class Shape2DSW {
 
 	RID self;
 	Rect2 aabb;

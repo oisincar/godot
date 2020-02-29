@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,14 +31,14 @@
 #include "capsule_shape.h"
 #include "servers/physics_server.h"
 
-Vector<Vector3> CapsuleShape::_gen_debug_mesh_lines() {
+Vector<Vector3> CapsuleShape::get_debug_mesh_lines() {
 
 	float radius = get_radius();
 	float height = get_height();
 
 	Vector<Vector3> points;
 
-	Vector3 d(0, 0, height * 0.5);
+	Vector3 d(0, height * 0.5, 0);
 	for (int i = 0; i < 360; i++) {
 
 		float ra = Math::deg2rad((float)i);
@@ -46,27 +46,31 @@ Vector<Vector3> CapsuleShape::_gen_debug_mesh_lines() {
 		Point2 a = Vector2(Math::sin(ra), Math::cos(ra)) * radius;
 		Point2 b = Vector2(Math::sin(rb), Math::cos(rb)) * radius;
 
-		points.push_back(Vector3(a.x, a.y, 0) + d);
-		points.push_back(Vector3(b.x, b.y, 0) + d);
+		points.push_back(Vector3(a.x, 0, a.y) + d);
+		points.push_back(Vector3(b.x, 0, b.y) + d);
 
-		points.push_back(Vector3(a.x, a.y, 0) - d);
-		points.push_back(Vector3(b.x, b.y, 0) - d);
+		points.push_back(Vector3(a.x, 0, a.y) - d);
+		points.push_back(Vector3(b.x, 0, b.y) - d);
 
 		if (i % 90 == 0) {
 
-			points.push_back(Vector3(a.x, a.y, 0) + d);
-			points.push_back(Vector3(a.x, a.y, 0) - d);
+			points.push_back(Vector3(a.x, 0, a.y) + d);
+			points.push_back(Vector3(a.x, 0, a.y) - d);
 		}
 
 		Vector3 dud = i < 180 ? d : -d;
 
-		points.push_back(Vector3(0, a.y, a.x) + dud);
-		points.push_back(Vector3(0, b.y, b.x) + dud);
-		points.push_back(Vector3(a.y, 0, a.x) + dud);
-		points.push_back(Vector3(b.y, 0, b.x) + dud);
+		points.push_back(Vector3(0, a.x, a.y) + dud);
+		points.push_back(Vector3(0, b.x, b.y) + dud);
+		points.push_back(Vector3(a.y, a.x, 0) + dud);
+		points.push_back(Vector3(b.y, b.x, 0) + dud);
 	}
 
 	return points;
+}
+
+real_t CapsuleShape::get_enclosing_radius() const {
+	return radius + height * 0.5;
 }
 
 void CapsuleShape::_update_shape() {
@@ -75,6 +79,7 @@ void CapsuleShape::_update_shape() {
 	d["radius"] = radius;
 	d["height"] = height;
 	PhysicsServer::get_singleton()->shape_set_data(get_shape(), d);
+	Shape::_update_shape();
 }
 
 void CapsuleShape::set_radius(float p_radius) {
@@ -110,8 +115,8 @@ void CapsuleShape::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_height", "height"), &CapsuleShape::set_height);
 	ClassDB::bind_method(D_METHOD("get_height"), &CapsuleShape::get_height);
 
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "radius", PROPERTY_HINT_RANGE, "0.01,4096,0.01"), "set_radius", "get_radius");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "height", PROPERTY_HINT_RANGE, "0.01,4096,0.01"), "set_height", "get_height");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "radius", PROPERTY_HINT_RANGE, "0.01,4096,0.01"), "set_radius", "get_radius");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "height", PROPERTY_HINT_RANGE, "0.01,4096,0.01"), "set_height", "get_height");
 }
 
 CapsuleShape::CapsuleShape() :

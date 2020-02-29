@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -34,14 +34,12 @@
 
 void CommandQueueMT::lock() {
 
-	if (mutex)
-		mutex->lock();
+	mutex.lock();
 }
 
 void CommandQueueMT::unlock() {
 
-	if (mutex)
-		mutex->unlock();
+	mutex.unlock();
 }
 
 void CommandQueueMT::wait_for_flush() {
@@ -97,7 +95,7 @@ tryagain:
 		return false;
 	}
 
-	dealloc_ptr += (size >> 1) + sizeof(uint32_t);
+	dealloc_ptr += (size >> 1) + 8;
 	return true;
 }
 
@@ -106,15 +104,15 @@ CommandQueueMT::CommandQueueMT(bool p_sync) {
 	read_ptr = 0;
 	write_ptr = 0;
 	dealloc_ptr = 0;
-	mutex = Mutex::create();
+	command_mem = (uint8_t *)memalloc(COMMAND_MEM_SIZE);
 
 	for (int i = 0; i < SYNC_SEMAPHORES; i++) {
 
-		sync_sems[i].sem = Semaphore::create();
+		sync_sems[i].sem = SemaphoreOld::create();
 		sync_sems[i].in_use = false;
 	}
 	if (p_sync)
-		sync = Semaphore::create();
+		sync = SemaphoreOld::create();
 	else
 		sync = NULL;
 }
@@ -123,9 +121,9 @@ CommandQueueMT::~CommandQueueMT() {
 
 	if (sync)
 		memdelete(sync);
-	memdelete(mutex);
 	for (int i = 0; i < SYNC_SEMAPHORES; i++) {
 
 		memdelete(sync_sems[i].sem);
 	}
+	memfree(command_mem);
 }

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,7 +31,6 @@
 #ifndef THREAD_DUMMY_H
 #define THREAD_DUMMY_H
 
-#include "core/os/mutex.h"
 #include "core/os/rw_lock.h"
 #include "core/os/semaphore.h"
 #include "core/os/thread.h"
@@ -46,21 +45,9 @@ public:
 	static void make_default();
 };
 
-class MutexDummy : public Mutex {
+class SemaphoreDummy : public SemaphoreOld {
 
-	static Mutex *create(bool p_recursive);
-
-public:
-	virtual void lock(){};
-	virtual void unlock(){};
-	virtual Error try_lock() { return OK; };
-
-	static void make_default();
-};
-
-class SemaphoreDummy : public Semaphore {
-
-	static Semaphore *create();
+	static SemaphoreOld *create();
 
 public:
 	virtual Error wait() { return OK; };

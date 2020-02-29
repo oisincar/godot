@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -154,12 +154,11 @@ Error AudioDriverALSA::init() {
 
 	Error err = init_device();
 	if (err == OK) {
-		mutex = Mutex::create();
 		thread = Thread::create(AudioDriverALSA::thread_func, this);
 	}
 
 	return err;
-};
+}
 
 void AudioDriverALSA::thread_func(void *p_udata) {
 
@@ -171,14 +170,14 @@ void AudioDriverALSA::thread_func(void *p_udata) {
 		ad->start_counting_ticks();
 
 		if (!ad->active) {
-			for (unsigned int i = 0; i < ad->period_size * ad->channels; i++) {
+			for (uint64_t i = 0; i < ad->period_size * ad->channels; i++) {
 				ad->samples_out.write[i] = 0;
 			}
 
 		} else {
 			ad->audio_server_process(ad->period_size, ad->samples_in.ptrw());
 
-			for (unsigned int i = 0; i < ad->period_size * ad->channels; i++) {
+			for (uint64_t i = 0; i < ad->period_size * ad->channels; i++) {
 				ad->samples_out.write[i] = ad->samples_in[i] >> 16;
 			}
 		}
@@ -204,7 +203,7 @@ void AudioDriverALSA::thread_func(void *p_udata) {
 			} else {
 				wrote = snd_pcm_recover(ad->pcm_handle, wrote, 0);
 				if (wrote < 0) {
-					ERR_PRINTS("ALSA: Failed and can't recover: " + String(snd_strerror(wrote)));
+					ERR_PRINT("ALSA: Failed and can't recover: " + String(snd_strerror(wrote)));
 					ad->active = false;
 					ad->exit_thread = true;
 				}
@@ -232,25 +231,25 @@ void AudioDriverALSA::thread_func(void *p_udata) {
 
 		ad->stop_counting_ticks();
 		ad->unlock();
-	};
+	}
 
 	ad->thread_exited = true;
-};
+}
 
 void AudioDriverALSA::start() {
 
 	active = true;
-};
+}
 
 int AudioDriverALSA::get_mix_rate() const {
 
 	return mix_rate;
-};
+}
 
 AudioDriver::SpeakerMode AudioDriverALSA::get_speaker_mode() const {
 
 	return speaker_mode;
-};
+}
 
 Array AudioDriverALSA::get_device_list() {
 
@@ -299,17 +298,17 @@ void AudioDriverALSA::set_device(String device) {
 
 void AudioDriverALSA::lock() {
 
-	if (!thread || !mutex)
+	if (!thread)
 		return;
-	mutex->lock();
-};
+	mutex.lock();
+}
 
 void AudioDriverALSA::unlock() {
 
-	if (!thread || !mutex)
+	if (!thread)
 		return;
-	mutex->unlock();
-};
+	mutex.unlock();
+}
 
 void AudioDriverALSA::finish_device() {
 
@@ -327,28 +326,19 @@ void AudioDriverALSA::finish() {
 
 		memdelete(thread);
 		thread = NULL;
-
-		if (mutex) {
-			memdelete(mutex);
-			mutex = NULL;
-		}
 	}
 
 	finish_device();
 }
 
-AudioDriverALSA::AudioDriverALSA() {
+AudioDriverALSA::AudioDriverALSA() :
+		thread(NULL),
+		pcm_handle(NULL),
+		device_name("Default"),
+		new_device("Default") {
+}
 
-	mutex = NULL;
-	thread = NULL;
-	pcm_handle = NULL;
-
-	device_name = "Default";
-	new_device = "Default";
-};
-
-AudioDriverALSA::~AudioDriverALSA(){
-
-};
+AudioDriverALSA::~AudioDriverALSA() {
+}
 
 #endif

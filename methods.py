@@ -1,22 +1,33 @@
 import os
 import os.path
-import sys
 import re
 import glob
-import string
-import datetime
 import subprocess
-from compat import iteritems, isbasestring
+from compat import iteritems, isbasestring, decode_utf8
 
 
-def add_source_files(self, sources, filetype, lib_env=None, shared=False):
+def add_source_files(self, sources, files, warn_duplicates=True):
+    # Convert string to list of absolute paths (including expanding wildcard)
+    if isbasestring(files):
+        # Keep SCons project-absolute path as they are (no wildcard support)
+        if files.startswith('#'):
+            if '*' in files:
+                print("ERROR: Wildcards can't be expanded in SCons project-absolute path: '{}'".format(files))
+                return
+            files = [files]
+        else:
+            dir_path = self.Dir('.').abspath
+            files = sorted(glob.glob(dir_path + "/" + files))
 
-    if isbasestring(filetype):
-        dir_path = self.Dir('.').abspath
-        filetype = sorted(glob.glob(dir_path + "/" + filetype))
-
-    for path in filetype:
-        sources.append(self.Object(path))
+    # Add each path as compiled Object following environment (self) configuration
+    for path in files:
+        obj = self.Object(path)
+        if obj in sources:
+            if warn_duplicates:
+                print("WARNING: Object \"{}\" already included in environment sources.".format(obj))
+            else:
+                continue
+        sources.append(obj)
 
 
 def disable_warnings(self):
@@ -25,10 +36,16 @@ def disable_warnings(self):
         # We have to remove existing warning level defines before appending /w,
         # otherwise we get: "warning D9025 : overriding '/W3' with '/w'"
         warn_flags = ['/Wall', '/W4', '/W3', '/W2', '/W1', '/WX']
-        self['CCFLAGS'] = [x for x in self['CCFLAGS'] if not x in warn_flags]
         self.Append(CCFLAGS=['/w'])
+        self.Append(CFLAGS=['/w'])
+        self.Append(CXXFLAGS=['/w'])
+        self['CCFLAGS'] = [x for x in self['CCFLAGS'] if not x in warn_flags]
+        self['CFLAGS'] = [x for x in self['CFLAGS'] if not x in warn_flags]
+        self['CXXFLAGS'] = [x for x in self['CXXFLAGS'] if not x in warn_flags]
     else:
         self.Append(CCFLAGS=['-w'])
+        self.Append(CFLAGS=['-w'])
+        self.Append(CXXFLAGS=['-w'])
 
 
 def add_module_version_string(self,s):
@@ -50,25 +67,33 @@ def update_version(module_version_string=""):
     f.write("#define VERSION_NAME \"" + str(version.name) + "\"\n")
     f.write("#define VERSION_MAJOR " + str(version.major) + "\n")
     f.write("#define VERSION_MINOR " + str(version.minor) + "\n")
-    if hasattr(version, 'patch'):
-        f.write("#define VERSION_PATCH " + str(version.patch) + "\n")
+    f.write("#define VERSION_PATCH " + str(version.patch) + "\n")
     f.write("#define VERSION_STATUS \"" + str(version.status) + "\"\n")
     f.write("#define VERSION_BUILD \"" + str(build_name) + "\"\n")
     f.write("#define VERSION_MODULE_CONFIG \"" + str(version.module_config) + module_version_string + "\"\n")
-    f.write("#define VERSION_YEAR " + str(2018) + "\n")
+    f.write("#define VERSION_YEAR " + str(version.year) + "\n")
+    f.write("#define VERSION_WEBSITE \"" + str(version.website) + "\"\n")
     f.close()
 
     # NOTE: It is safe to generate this file here, since this is still executed serially
     fhash = open("core/version_hash.gen.h", "w")
     githash = ""
-    if os.path.isfile(".git/HEAD"):
-        head = open(".git/HEAD", "r").readline().strip()
+    gitfolder = ".git"
+
+    if os.path.isfile(".git"):
+        module_folder = open(".git", "r").readline().strip()
+        if module_folder.startswith("gitdir: "):
+            gitfolder = module_folder[8:]
+
+    if os.path.isfile(os.path.join(gitfolder, "HEAD")):
+        head = open(os.path.join(gitfolder, "HEAD"), "r").readline().strip()
         if head.startswith("ref: "):
-            head = ".git/" + head[5:]
+            head = os.path.join(gitfolder, head[5:])
             if os.path.isfile(head):
                 githash = open(head, "r").readline().strip()
         else:
             githash = head
+
     fhash.write("#define VERSION_HASH \"" + githash + "\"")
     fhash.close()
 
@@ -112,6 +137,7 @@ def detect_modules():
     includes_cpp = ""
     register_cpp = ""
     unregister_cpp = ""
+    preregister_cpp = ""
 
     files = glob.glob("modules/*")
     files.sort()  # so register_module_types does not change that often, and also plugins are registered in alphabetic order
@@ -129,26 +155,37 @@ def detect_modules():
                 register_cpp += '#ifdef MODULE_' + x.upper() + '_ENABLED\n'
                 register_cpp += '\tregister_' + x + '_types();\n'
                 register_cpp += '#endif\n'
+                preregister_cpp += '#ifdef MODULE_' + x.upper() + '_ENABLED\n'
+                preregister_cpp += '#ifdef MODULE_' + x.upper() + '_HAS_PREREGISTER\n'
+                preregister_cpp += '\tpreregister_' + x + '_types();\n'
+                preregister_cpp += '#endif\n'
+                preregister_cpp += '#endif\n'
                 unregister_cpp += '#ifdef MODULE_' + x.upper() + '_ENABLED\n'
                 unregister_cpp += '\tunregister_' + x + '_types();\n'
                 unregister_cpp += '#endif\n'
         except IOError:
             pass
 
-    modules_cpp = """
-// modules.cpp - THIS FILE IS GENERATED, DO NOT EDIT!!!!!!!
+    modules_cpp = """// register_module_types.gen.cpp
+/* THIS FILE IS GENERATED DO NOT EDIT */
 #include "register_module_types.h"
 
-""" + includes_cpp + """
+#include "modules/modules_enabled.gen.h"
+
+%s
+
+void preregister_module_types() {
+%s
+}
 
 void register_module_types() {
-""" + register_cpp + """
+%s
 }
 
 void unregister_module_types() {
-""" + unregister_cpp + """
+%s
 }
-"""
+""" % (includes_cpp, preregister_cpp, register_cpp, unregister_cpp)
 
     # NOTE: It is safe to generate this file here, since this is still executed serially
     with open("modules/register_module_types.gen.cpp", "w") as f:
@@ -167,7 +204,7 @@ def win32_spawn(sh, escape, cmd, args, env):
             env[e] = str(env[e])
     proc = subprocess.Popen(cmdline, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, startupinfo=startupinfo, shell=False, env=env)
-    data, err = proc.communicate()
+    _, err = proc.communicate()
     rv = proc.wait()
     if rv:
         print("=====")
@@ -175,101 +212,10 @@ def win32_spawn(sh, escape, cmd, args, env):
         print("=====")
     return rv
 
-"""
-def win32_spawn(sh, escape, cmd, args, spawnenv):
-	import win32file
-	import win32event
-	import win32process
-	import win32security
-	for var in spawnenv:
-		spawnenv[var] = spawnenv[var].encode('ascii', 'replace')
-
-	sAttrs = win32security.SECURITY_ATTRIBUTES()
-	StartupInfo = win32process.STARTUPINFO()
-	newargs = ' '.join(map(escape, args[1:]))
-	cmdline = cmd + " " + newargs
-
-	# check for any special operating system commands
-	if cmd == 'del':
-		for arg in args[1:]:
-			win32file.DeleteFile(arg)
-		exit_code = 0
-	else:
-		# otherwise execute the command.
-		hProcess, hThread, dwPid, dwTid = win32process.CreateProcess(None, cmdline, None, None, 1, 0, spawnenv, None, StartupInfo)
-		win32event.WaitForSingleObject(hProcess, win32event.INFINITE)
-		exit_code = win32process.GetExitCodeProcess(hProcess)
-		win32file.CloseHandle(hProcess);
-		win32file.CloseHandle(hThread);
-	return exit_code
-"""
-
-def android_add_flat_dir(self, dir):
-    if (dir not in self.android_flat_dirs):
-        self.android_flat_dirs.append(dir)
-
-def android_add_maven_repository(self, url):
-    if (url not in self.android_maven_repos):
-        self.android_maven_repos.append(url)
-
-def android_add_dependency(self, depline):
-    if (depline not in self.android_dependencies):
-        self.android_dependencies.append(depline)
-
-def android_add_java_dir(self, subpath):
-    base_path = self.Dir(".").abspath + "/modules/" + self.current_module + "/" + subpath
-    if (base_path not in self.android_java_dirs):
-        self.android_java_dirs.append(base_path)
-
-def android_add_res_dir(self, subpath):
-    base_path = self.Dir(".").abspath + "/modules/" + self.current_module + "/" + subpath
-    if (base_path not in self.android_res_dirs):
-        self.android_res_dirs.append(base_path)
-
-def android_add_asset_dir(self, subpath):
-    base_path = self.Dir(".").abspath + "/modules/" + self.current_module + "/" + subpath
-    if (base_path not in self.android_asset_dirs):
-        self.android_asset_dirs.append(base_path)
-
-def android_add_aidl_dir(self, subpath):
-    base_path = self.Dir(".").abspath + "/modules/" + self.current_module + "/" + subpath
-    if (base_path not in self.android_aidl_dirs):
-        self.android_aidl_dirs.append(base_path)
-
-def android_add_jni_dir(self, subpath):
-    base_path = self.Dir(".").abspath + "/modules/" + self.current_module + "/" + subpath
-    if (base_path not in self.android_jni_dirs):
-        self.android_jni_dirs.append(base_path)
-
-def android_add_gradle_plugin(self, plugin):
-    if (plugin not in self.android_gradle_plugins):
-        self.android_gradle_plugins.append(plugin)
-
-def android_add_gradle_classpath(self, classpath):
-    if (classpath not in self.android_gradle_classpath):
-        self.android_gradle_classpath.append(classpath)
-
-def android_add_default_config(self, config):
-    if (config not in self.android_default_config):
-        self.android_default_config.append(config)
-
-def android_add_to_manifest(self, file):
-    base_path = self.Dir(".").abspath + "/modules/" + self.current_module + "/" + file
-    with open(base_path, "r") as f:
-        self.android_manifest_chunk += f.read()
-
-def android_add_to_permissions(self, file):
-    base_path = self.Dir(".").abspath + "/modules/" + self.current_module + "/" + file
-    with open(base_path, "r") as f:
-        self.android_permission_chunk += f.read()
-
-def android_add_to_attributes(self, file):
-    base_path = self.Dir(".").abspath + "/modules/" + self.current_module + "/" + file
-    with open(base_path, "r") as f:
-        self.android_appattributes_chunk += f.read()
 
 def disable_module(self):
     self.disabled_modules.append(self.current_module)
+
 
 def use_windows_spawn_fix(self, platform=None):
 
@@ -292,7 +238,7 @@ def use_windows_spawn_fix(self, platform=None):
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         proc = subprocess.Popen(cmdline, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, startupinfo=startupinfo, shell=False, env=env)
-        data, err = proc.communicate()
+        _, err = proc.communicate()
         rv = proc.wait()
         if rv:
             print("=====")
@@ -319,55 +265,6 @@ def use_windows_spawn_fix(self, platform=None):
         return rv
 
     self['SPAWN'] = mySpawn
-
-
-def split_lib(self, libname, src_list = None, env_lib = None):
-    env = self
-
-    num = 0
-    cur_base = ""
-    max_src = 64
-    list = []
-    lib_list = []
-
-    if src_list is None:
-        src_list = getattr(env, libname + "_sources")
-
-    if type(env_lib) == type(None):
-        env_lib = env
-
-    for f in src_list:
-        fname = ""
-        if type(f) == type(""):
-            fname = env.File(f).path
-        else:
-            fname = env.File(f)[0].path
-        fname = fname.replace("\\", "/")
-        base = string.join(fname.split("/")[:2], "/")
-        if base != cur_base and len(list) > max_src:
-            if num > 0:
-                lib = env_lib.add_library(libname + str(num), list)
-                lib_list.append(lib)
-                list = []
-            num = num + 1
-        cur_base = base
-        list.append(f)
-
-    lib = env_lib.add_library(libname + str(num), list)
-    lib_list.append(lib)
-
-    if len(lib_list) > 0:
-        if os.name == 'posix' and sys.platform == 'msys':
-            env.Replace(ARFLAGS=['rcsT'])
-            lib = env_lib.add_library(libname + "_collated", lib_list)
-            lib_list = [lib]
-
-    lib_base = []
-    env_lib.add_source_files(lib_base, "*.cpp")
-    lib = env_lib.add_library(libname, lib_base)
-    lib_list.insert(0, lib)
-
-    env.Prepend(LIBS=lib_list)
 
 
 def save_active_platforms(apnames, ap):
@@ -537,7 +434,7 @@ def find_visual_c_batch_file(env):
     from SCons.Tool.MSCommon.vc import get_default_version, get_host_target, find_batch_file
 
     version = get_default_version(env)
-    (host_platform, target_platform,req_target_platform) = get_host_target(env)
+    (host_platform, target_platform, _) = get_host_target(env)
     return find_batch_file(env, version, host_platform, target_platform)[0]
 
 def generate_cpp_hint_file(filename):
@@ -591,7 +488,7 @@ def generate_vs_project(env, num_jobs):
         release_debug_targets = ['bin\\godot.windows.opt.tools.32.exe'] + ['bin\\godot.windows.opt.tools.64.exe']
         targets = debug_targets + release_targets + release_debug_targets
         if not env.get('MSVS'):
-            env['MSVS']['PROJECTSUFFIX'] = '.vcxproj'    
+            env['MSVS']['PROJECTSUFFIX'] = '.vcxproj'
             env['MSVS']['SOLUTIONSUFFIX'] = '.sln'
         env.MSVSProject(
             target=['#godot' + env['MSVSPROJECTSUFFIX']],
@@ -628,3 +525,56 @@ def CommandNoCache(env, target, sources, command, **args):
     result = env.Command(target, sources, command, **args)
     env.NoCache(result)
     return result
+
+def detect_darwin_sdk_path(platform, env):
+    sdk_name = ''
+    if platform == 'osx':
+        sdk_name = 'macosx'
+        var_name = 'MACOS_SDK_PATH'
+    elif platform == 'iphone':
+        sdk_name = 'iphoneos'
+        var_name = 'IPHONESDK'
+    elif platform == 'iphonesimulator':
+        sdk_name = 'iphonesimulator'
+        var_name = 'IPHONESDK'
+    else:
+        raise Exception("Invalid platform argument passed to detect_darwin_sdk_path")
+
+    if not env[var_name]:
+        try:
+            sdk_path = decode_utf8(subprocess.check_output(['xcrun', '--sdk', sdk_name, '--show-sdk-path']).strip())
+            if sdk_path:
+                env[var_name] = sdk_path
+        except (subprocess.CalledProcessError, OSError):
+            print("Failed to find SDK path while running xcrun --sdk {} --show-sdk-path.".format(sdk_name))
+            raise
+
+def is_vanilla_clang(env):
+    if not using_clang(env):
+        return False
+    version = decode_utf8(subprocess.check_output([env['CXX'], '--version']).strip())
+    return not version.startswith("Apple")
+
+
+def get_compiler_version(env):
+    """
+    Returns an array of version numbers as ints: [major, minor, patch].
+    The return array should have at least two values (major, minor).
+    """
+    if not env.msvc:
+        # Not using -dumpversion as some GCC distros only return major, and
+        # Clang used to return hardcoded 4.2.1: # https://reviews.llvm.org/D56803
+        version = decode_utf8(subprocess.check_output([env['CXX'], '--version']).strip())
+    else:  # TODO: Implement for MSVC
+        return None
+    match = re.search('[0-9]+\.[0-9.]+', version)
+    if match is not None:
+        return list(map(int, match.group().split('.')))
+    else:
+        return None
+
+def using_gcc(env):
+    return 'gcc' in os.path.basename(env["CC"])
+
+def using_clang(env):
+    return 'clang' in os.path.basename(env["CC"])

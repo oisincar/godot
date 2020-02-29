@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -30,6 +30,7 @@
 
 #include "core_bind.h"
 
+#include "core/crypto/crypto_core.h"
 #include "core/io/file_access_compressed.h"
 #include "core/io/file_access_encrypted.h"
 #include "core/io/json.h"
@@ -38,8 +39,6 @@
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "core/project_settings.h"
-
-#include "thirdparty/misc/base64.h"
 
 /**
  *  Time constants borrowed from loc_time.h
@@ -65,8 +64,21 @@ static const unsigned int MONTH_DAYS_TABLE[2][12] = {
 
 _ResourceLoader *_ResourceLoader::singleton = NULL;
 
-Ref<ResourceInteractiveLoader> _ResourceLoader::load_interactive(const String &p_path, const String &p_type_hint) {
-	return ResourceLoader::load_interactive(p_path, p_type_hint);
+Error _ResourceLoader::load_threaded_request(const String &p_path, const String &p_type_hint, bool p_use_sub_threads) {
+
+	return ResourceLoader::load_threaded_request(p_path, p_type_hint, p_use_sub_threads);
+}
+_ResourceLoader::ThreadLoadStatus _ResourceLoader::load_threaded_get_status(const String &p_path, Array r_progress) {
+	float progress = 0;
+	ResourceLoader::ThreadLoadStatus tls = ResourceLoader::load_threaded_get_status(p_path, &progress);
+	r_progress.resize(1);
+	r_progress[0] = progress;
+	return (ThreadLoadStatus)tls;
+}
+RES _ResourceLoader::load_threaded_get(const String &p_path) {
+	Error error;
+	RES res = ResourceLoader::load_threaded_get(p_path, &error);
+	return res;
 }
 
 RES _ResourceLoader::load(const String &p_path, const String &p_type_hint, bool p_no_cache) {
@@ -74,18 +86,15 @@ RES _ResourceLoader::load(const String &p_path, const String &p_type_hint, bool 
 	Error err = OK;
 	RES ret = ResourceLoader::load(p_path, p_type_hint, p_no_cache, &err);
 
-	if (err != OK) {
-		ERR_EXPLAIN("Error loading resource: '" + p_path + "'");
-		ERR_FAIL_COND_V(err != OK, ret);
-	}
+	ERR_FAIL_COND_V_MSG(err != OK, ret, "Error loading resource: '" + p_path + "'.");
 	return ret;
 }
 
-PoolVector<String> _ResourceLoader::get_recognized_extensions_for_type(const String &p_type) {
+Vector<String> _ResourceLoader::get_recognized_extensions_for_type(const String &p_type) {
 
 	List<String> exts;
 	ResourceLoader::get_recognized_extensions_for_type(p_type, &exts);
-	PoolVector<String> ret;
+	Vector<String> ret;
 	for (List<String>::Element *E = exts.front(); E; E = E->next()) {
 
 		ret.push_back(E->get());
@@ -99,25 +108,18 @@ void _ResourceLoader::set_abort_on_missing_resources(bool p_abort) {
 	ResourceLoader::set_abort_on_missing_resources(p_abort);
 }
 
-PoolStringArray _ResourceLoader::get_dependencies(const String &p_path) {
+PackedStringArray _ResourceLoader::get_dependencies(const String &p_path) {
 
 	List<String> deps;
 	ResourceLoader::get_dependencies(p_path, &deps);
 
-	PoolStringArray ret;
+	PackedStringArray ret;
 	for (List<String>::Element *E = deps.front(); E; E = E->next()) {
 		ret.push_back(E->get());
 	}
 
 	return ret;
 };
-
-#ifndef DISABLE_DEPRECATED
-bool _ResourceLoader::has(const String &p_path) {
-	WARN_PRINTS("ResourceLoader.has() is deprecated, please replace it with the equivalent has_cached() or the new exists().");
-	return has_cached(p_path);
-}
-#endif // DISABLE_DEPRECATED
 
 bool _ResourceLoader::has_cached(const String &p_path) {
 
@@ -131,16 +133,21 @@ bool _ResourceLoader::exists(const String &p_path, const String &p_type_hint) {
 
 void _ResourceLoader::_bind_methods() {
 
-	ClassDB::bind_method(D_METHOD("load_interactive", "path", "type_hint"), &_ResourceLoader::load_interactive, DEFVAL(""));
-	ClassDB::bind_method(D_METHOD("load", "path", "type_hint", "p_no_cache"), &_ResourceLoader::load, DEFVAL(""), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("load_threaded_request", "path", "type_hint", "use_sub_threads"), &_ResourceLoader::load_threaded_request, DEFVAL(""), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("load_threaded_get_status", "path", "progress"), &_ResourceLoader::load_threaded_get_status, DEFVAL(Array()));
+	ClassDB::bind_method(D_METHOD("load_threaded_get", "path"), &_ResourceLoader::load_threaded_get);
+
+	ClassDB::bind_method(D_METHOD("load", "path", "type_hint", "no_cache"), &_ResourceLoader::load, DEFVAL(""), DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_recognized_extensions_for_type", "type"), &_ResourceLoader::get_recognized_extensions_for_type);
 	ClassDB::bind_method(D_METHOD("set_abort_on_missing_resources", "abort"), &_ResourceLoader::set_abort_on_missing_resources);
 	ClassDB::bind_method(D_METHOD("get_dependencies", "path"), &_ResourceLoader::get_dependencies);
 	ClassDB::bind_method(D_METHOD("has_cached", "path"), &_ResourceLoader::has_cached);
 	ClassDB::bind_method(D_METHOD("exists", "path", "type_hint"), &_ResourceLoader::exists, DEFVAL(""));
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("has", "path"), &_ResourceLoader::has);
-#endif // DISABLE_DEPRECATED
+
+	BIND_ENUM_CONSTANT(THREAD_LOAD_INVALID_RESOURCE);
+	BIND_ENUM_CONSTANT(THREAD_LOAD_IN_PROGRESS);
+	BIND_ENUM_CONSTANT(THREAD_LOAD_FAILED);
+	BIND_ENUM_CONSTANT(THREAD_LOAD_LOADED);
 }
 
 _ResourceLoader::_ResourceLoader() {
@@ -148,18 +155,17 @@ _ResourceLoader::_ResourceLoader() {
 	singleton = this;
 }
 
-Error _ResourceSaver::save(const String &p_path, const RES &p_resource, uint32_t p_flags) {
-
-	ERR_FAIL_COND_V(p_resource.is_null(), ERR_INVALID_PARAMETER);
+Error _ResourceSaver::save(const String &p_path, const RES &p_resource, SaverFlags p_flags) {
+	ERR_FAIL_COND_V_MSG(p_resource.is_null(), ERR_INVALID_PARAMETER, "Can't save empty resource to path '" + String(p_path) + "'.");
 	return ResourceSaver::save(p_path, p_resource, p_flags);
 }
 
-PoolVector<String> _ResourceSaver::get_recognized_extensions(const RES &p_resource) {
+Vector<String> _ResourceSaver::get_recognized_extensions(const RES &p_resource) {
 
-	ERR_FAIL_COND_V(p_resource.is_null(), PoolVector<String>());
+	ERR_FAIL_COND_V_MSG(p_resource.is_null(), Vector<String>(), "It's not a reference to a valid Resource object.");
 	List<String> exts;
 	ResourceSaver::get_recognized_extensions(p_resource, &exts);
-	PoolVector<String> ret;
+	Vector<String> ret;
 	for (List<String>::Element *E = exts.front(); E; E = E->next()) {
 
 		ret.push_back(E->get());
@@ -190,10 +196,31 @@ _ResourceSaver::_ResourceSaver() {
 
 /////////////////OS
 
+void _OS::global_menu_add_item(const String &p_menu, const String &p_label, const Variant &p_signal, const Variant &p_meta) {
+
+	OS::get_singleton()->global_menu_add_item(p_menu, p_label, p_signal, p_meta);
+}
+
+void _OS::global_menu_add_separator(const String &p_menu) {
+
+	OS::get_singleton()->global_menu_add_separator(p_menu);
+}
+
+void _OS::global_menu_remove_item(const String &p_menu, int p_idx) {
+
+	OS::get_singleton()->global_menu_remove_item(p_menu, p_idx);
+}
+
+void _OS::global_menu_clear(const String &p_menu) {
+
+	OS::get_singleton()->global_menu_clear(p_menu);
+}
+
 Point2 _OS::get_mouse_position() const {
 
 	return OS::get_singleton()->get_mouse_position();
 }
+
 void _OS::set_window_title(const String &p_title) {
 
 	OS::get_singleton()->set_window_title(p_title);
@@ -207,6 +234,7 @@ int _OS::get_mouse_button_state() const {
 String _OS::get_unique_id() const {
 	return OS::get_singleton()->get_unique_id();
 }
+
 bool _OS::has_touchscreen_ui_hint() const {
 
 	return OS::get_singleton()->has_touchscreen_ui_hint();
@@ -216,6 +244,7 @@ void _OS::set_clipboard(const String &p_text) {
 
 	OS::get_singleton()->set_clipboard(p_text);
 }
+
 String _OS::get_clipboard() const {
 
 	return OS::get_singleton()->get_clipboard();
@@ -225,8 +254,12 @@ int _OS::get_video_driver_count() const {
 	return OS::get_singleton()->get_video_driver_count();
 }
 
-String _OS::get_video_driver_name(int p_driver) const {
-	return OS::get_singleton()->get_video_driver_name(p_driver);
+String _OS::get_video_driver_name(VideoDriver p_driver) const {
+	return OS::get_singleton()->get_video_driver_name((int)p_driver);
+}
+
+_OS::VideoDriver _OS::get_current_video_driver() const {
+	return (VideoDriver)OS::get_singleton()->get_current_video_driver();
 }
 
 int _OS::get_audio_driver_count() const {
@@ -237,16 +270,16 @@ String _OS::get_audio_driver_name(int p_driver) const {
 	return OS::get_singleton()->get_audio_driver_name(p_driver);
 }
 
-PoolStringArray _OS::get_connected_midi_inputs() {
+PackedStringArray _OS::get_connected_midi_inputs() {
 	return OS::get_singleton()->get_connected_midi_inputs();
 }
 
 void _OS::open_midi_inputs() {
-	return OS::get_singleton()->open_midi_inputs();
+	OS::get_singleton()->open_midi_inputs();
 }
 
 void _OS::close_midi_inputs() {
-	return OS::get_singleton()->close_midi_inputs();
+	OS::get_singleton()->close_midi_inputs();
 }
 
 void _OS::set_video_mode(const Size2 &p_size, bool p_fullscreen, bool p_resizeable, int p_screen) {
@@ -258,12 +291,14 @@ void _OS::set_video_mode(const Size2 &p_size, bool p_fullscreen, bool p_resizeab
 	vm.resizable = p_resizeable;
 	OS::get_singleton()->set_video_mode(vm, p_screen);
 }
+
 Size2 _OS::get_video_mode(int p_screen) const {
 
 	OS::VideoMode vm;
 	vm = OS::get_singleton()->get_video_mode(p_screen);
 	return Size2(vm.width, vm.height);
 }
+
 bool _OS::is_video_mode_fullscreen(int p_screen) const {
 
 	OS::VideoMode vm;
@@ -304,12 +339,28 @@ void _OS::set_window_position(const Point2 &p_position) {
 	OS::get_singleton()->set_window_position(p_position);
 }
 
+Size2 _OS::get_max_window_size() const {
+	return OS::get_singleton()->get_max_window_size();
+}
+
+Size2 _OS::get_min_window_size() const {
+	return OS::get_singleton()->get_min_window_size();
+}
+
 Size2 _OS::get_window_size() const {
 	return OS::get_singleton()->get_window_size();
 }
 
 Size2 _OS::get_real_window_size() const {
 	return OS::get_singleton()->get_real_window_size();
+}
+
+void _OS::set_max_window_size(const Size2 &p_size) {
+	OS::get_singleton()->set_max_window_size(p_size);
+}
+
+void _OS::set_min_window_size(const Size2 &p_size) {
+	OS::get_singleton()->set_min_window_size(p_size);
 }
 
 void _OS::set_window_size(const Size2 &p_size) {
@@ -360,6 +411,10 @@ bool _OS::is_window_always_on_top() const {
 	return OS::get_singleton()->is_window_always_on_top();
 }
 
+bool _OS::is_window_focused() const {
+	return OS::get_singleton()->is_window_focused();
+}
+
 void _OS::set_borderless_window(bool p_borderless) {
 	OS::get_singleton()->set_borderless_window(p_borderless);
 }
@@ -378,12 +433,20 @@ bool _OS::get_borderless_window() const {
 
 void _OS::set_ime_active(const bool p_active) {
 
-	return OS::get_singleton()->set_ime_active(p_active);
+	OS::get_singleton()->set_ime_active(p_active);
 }
 
 void _OS::set_ime_position(const Point2 &p_pos) {
 
-	return OS::get_singleton()->set_ime_position(p_pos);
+	OS::get_singleton()->set_ime_position(p_pos);
+}
+
+Point2 _OS::get_ime_selection() const {
+	return OS::get_singleton()->get_ime_selection();
+}
+
+String _OS::get_ime_text() const {
+	return OS::get_singleton()->get_ime_text();
 }
 
 void _OS::set_use_file_access_save_and_swap(bool p_enable) {
@@ -420,6 +483,16 @@ bool _OS::is_in_low_processor_usage_mode() const {
 	return OS::get_singleton()->is_in_low_processor_usage_mode();
 }
 
+void _OS::set_low_processor_usage_mode_sleep_usec(int p_usec) {
+
+	OS::get_singleton()->set_low_processor_usage_mode_sleep_usec(p_usec);
+}
+
+int _OS::get_low_processor_usage_mode_sleep_usec() const {
+
+	return OS::get_singleton()->get_low_processor_usage_mode_sleep_usec();
+}
+
 String _OS::get_executable_path() const {
 
 	return OS::get_singleton()->get_executable_path();
@@ -430,18 +503,21 @@ Error _OS::shell_open(String p_uri) {
 	return OS::get_singleton()->shell_open(p_uri);
 };
 
-int _OS::execute(const String &p_path, const Vector<String> &p_arguments, bool p_blocking, Array p_output) {
+int _OS::execute(const String &p_path, const Vector<String> &p_arguments, bool p_blocking, Array p_output, bool p_read_stderr) {
 
 	OS::ProcessID pid = -2;
+	int exitcode = 0;
 	List<String> args;
 	for (int i = 0; i < p_arguments.size(); i++)
 		args.push_back(p_arguments[i]);
 	String pipe;
-	Error err = OS::get_singleton()->execute(p_path, args, p_blocking, &pid, &pipe);
+	Error err = OS::get_singleton()->execute(p_path, args, p_blocking, &pid, &pipe, &exitcode, p_read_stderr);
 	p_output.clear();
 	p_output.push_back(pipe);
 	if (err != OK)
 		return -1;
+	else if (p_blocking)
+		return exitcode;
 	else
 		return pid;
 }
@@ -523,16 +599,13 @@ bool _OS::is_vsync_enabled() const {
 	return OS::get_singleton()->is_vsync_enabled();
 }
 
-_OS::PowerState _OS::get_power_state() {
-	return _OS::PowerState(OS::get_singleton()->get_power_state());
+void _OS::set_vsync_via_compositor(bool p_enable) {
+	OS::get_singleton()->set_vsync_via_compositor(p_enable);
 }
 
-int _OS::get_power_seconds_left() {
-	return OS::get_singleton()->get_power_seconds_left();
-}
+bool _OS::is_vsync_via_compositor_enabled() const {
 
-int _OS::get_power_percent_left() {
-	return OS::get_singleton()->get_power_percent_left();
+	return OS::get_singleton()->is_vsync_via_compositor_enabled();
 }
 
 bool _OS::has_feature(const String &p_feature) const {
@@ -584,19 +657,19 @@ struct Time {
 };
 */
 
-int _OS::get_static_memory_usage() const {
+uint64_t _OS::get_static_memory_usage() const {
 
 	return OS::get_singleton()->get_static_memory_usage();
 }
 
-int _OS::get_static_memory_peak_usage() const {
+uint64_t _OS::get_static_memory_peak_usage() const {
 
 	return OS::get_singleton()->get_static_memory_peak_usage();
 }
 
-int _OS::get_dynamic_memory_usage() const {
+void _OS::set_native_icon(const String &p_filename) {
 
-	return OS::get_singleton()->get_dynamic_memory_usage();
+	OS::get_singleton()->set_native_icon(p_filename);
 }
 
 void _OS::set_icon(const Ref<Image> &p_icon) {
@@ -610,6 +683,10 @@ int _OS::get_exit_code() const {
 }
 
 void _OS::set_exit_code(int p_code) {
+
+	if (p_code < 0 || p_code > 125) {
+		WARN_PRINT("For portability reasons, the exit code should be set between 0 and 125 (inclusive).");
+	}
 
 	OS::get_singleton()->set_exit_code(p_code);
 }
@@ -693,22 +770,16 @@ int64_t _OS::get_unix_time_from_datetime(Dictionary datetime) const {
 		{ 0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366 }
 	};
 
-	ERR_EXPLAIN("Invalid second value of: " + itos(second));
-	ERR_FAIL_COND_V(second > 59, 0);
+	ERR_FAIL_COND_V_MSG(second > 59, 0, "Invalid second value of: " + itos(second) + ".");
 
-	ERR_EXPLAIN("Invalid minute value of: " + itos(minute));
-	ERR_FAIL_COND_V(minute > 59, 0);
+	ERR_FAIL_COND_V_MSG(minute > 59, 0, "Invalid minute value of: " + itos(minute) + ".");
 
-	ERR_EXPLAIN("Invalid hour value of: " + itos(hour));
-	ERR_FAIL_COND_V(hour > 23, 0);
+	ERR_FAIL_COND_V_MSG(hour > 23, 0, "Invalid hour value of: " + itos(hour) + ".");
 
-	ERR_EXPLAIN("Invalid month value of: " + itos(month));
-	ERR_FAIL_COND_V(month > 12 || month == 0, 0);
+	ERR_FAIL_COND_V_MSG(month > 12 || month == 0, 0, "Invalid month value of: " + itos(month) + ".");
 
 	// Do this check after month is tested as valid
-	ERR_EXPLAIN("Invalid day value of: " + itos(day) + " which is larger than " + itos(MONTH_DAYS_TABLE[LEAPYEAR(year)][month - 1]) + " or 0");
-	ERR_FAIL_COND_V(day > MONTH_DAYS_TABLE[LEAPYEAR(year)][month - 1] || day == 0, 0);
-
+	ERR_FAIL_COND_V_MSG(day > MONTH_DAYS_TABLE[LEAPYEAR(year)][month - 1] || day == 0, 0, "Invalid day value of '" + itos(day) + "' which is larger than '" + itos(MONTH_DAYS_TABLE[LEAPYEAR(year)][month - 1]) + "' or 0.");
 	// Calculate all the seconds from months past in this year
 	uint64_t SECONDS_FROM_MONTHS_PAST_THIS_YEAR = DAYS_PAST_THIS_YEAR_TABLE[LEAPYEAR(year)][month - 1] * SECONDS_PER_DAY;
 
@@ -780,7 +851,7 @@ Dictionary _OS::get_datetime_from_unix_time(int64_t unix_time_val) const {
 
 	size_t imonth = 0;
 
-	while (dayno >= MONTH_DAYS_TABLE[LEAPYEAR(year)][imonth]) {
+	while ((unsigned long)dayno >= MONTH_DAYS_TABLE[LEAPYEAR(year)][imonth]) {
 		dayno -= MONTH_DAYS_TABLE[LEAPYEAR(year)][imonth];
 		imonth++;
 	}
@@ -817,6 +888,10 @@ uint64_t _OS::get_unix_time() const {
 
 uint64_t _OS::get_system_time_secs() const {
 	return OS::get_singleton()->get_system_time_secs();
+}
+
+uint64_t _OS::get_system_time_msecs() const {
+	return OS::get_singleton()->get_system_time_msecs();
 }
 
 void _OS::delay_usec(uint32_t p_usec) const {
@@ -1020,6 +1095,11 @@ void _OS::center_window() {
 	OS::get_singleton()->center_window();
 }
 
+void _OS::move_window_to_foreground() {
+
+	OS::get_singleton()->move_window_to_foreground();
+}
+
 bool _OS::is_debug_build() const {
 
 #ifdef DEBUG_ENABLED
@@ -1072,6 +1152,21 @@ void _OS::alert(const String &p_alert, const String &p_title) {
 	OS::get_singleton()->alert(p_alert, p_title);
 }
 
+bool _OS::request_permission(const String &p_name) {
+
+	return OS::get_singleton()->request_permission(p_name);
+}
+
+bool _OS::request_permissions() {
+
+	return OS::get_singleton()->request_permissions();
+}
+
+Vector<String> _OS::get_granted_permissions() const {
+
+	return OS::get_singleton()->get_granted_permissions();
+}
+
 _OS *_OS::singleton = NULL;
 
 void _OS::_bind_methods() {
@@ -1089,8 +1184,15 @@ void _OS::_bind_methods() {
 	//ClassDB::bind_method(D_METHOD("is_video_mode_resizable","screen"),&_OS::is_video_mode_resizable,DEFVAL(0));
 	//ClassDB::bind_method(D_METHOD("get_fullscreen_mode_list","screen"),&_OS::get_fullscreen_mode_list,DEFVAL(0));
 
+	ClassDB::bind_method(D_METHOD("global_menu_add_item", "menu", "label", "id", "meta"), &_OS::global_menu_add_item);
+	ClassDB::bind_method(D_METHOD("global_menu_add_separator", "menu"), &_OS::global_menu_add_separator);
+	ClassDB::bind_method(D_METHOD("global_menu_remove_item", "menu", "idx"), &_OS::global_menu_remove_item);
+	ClassDB::bind_method(D_METHOD("global_menu_clear", "menu"), &_OS::global_menu_clear);
+
 	ClassDB::bind_method(D_METHOD("get_video_driver_count"), &_OS::get_video_driver_count);
 	ClassDB::bind_method(D_METHOD("get_video_driver_name", "driver"), &_OS::get_video_driver_name);
+	ClassDB::bind_method(D_METHOD("get_current_video_driver"), &_OS::get_current_video_driver);
+
 	ClassDB::bind_method(D_METHOD("get_audio_driver_count"), &_OS::get_audio_driver_count);
 	ClassDB::bind_method(D_METHOD("get_audio_driver_name", "driver"), &_OS::get_audio_driver_name);
 	ClassDB::bind_method(D_METHOD("get_connected_midi_inputs"), &_OS::get_connected_midi_inputs);
@@ -1106,6 +1208,10 @@ void _OS::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_window_position"), &_OS::get_window_position);
 	ClassDB::bind_method(D_METHOD("set_window_position", "position"), &_OS::set_window_position);
 	ClassDB::bind_method(D_METHOD("get_window_size"), &_OS::get_window_size);
+	ClassDB::bind_method(D_METHOD("get_max_window_size"), &_OS::get_max_window_size);
+	ClassDB::bind_method(D_METHOD("get_min_window_size"), &_OS::get_min_window_size);
+	ClassDB::bind_method(D_METHOD("set_max_window_size", "size"), &_OS::set_max_window_size);
+	ClassDB::bind_method(D_METHOD("set_min_window_size", "size"), &_OS::set_min_window_size);
 	ClassDB::bind_method(D_METHOD("set_window_size", "size"), &_OS::set_window_size);
 	ClassDB::bind_method(D_METHOD("get_window_safe_area"), &_OS::get_window_safe_area);
 	ClassDB::bind_method(D_METHOD("set_window_fullscreen", "enabled"), &_OS::set_window_fullscreen);
@@ -1118,9 +1224,11 @@ void _OS::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_window_maximized"), &_OS::is_window_maximized);
 	ClassDB::bind_method(D_METHOD("set_window_always_on_top", "enabled"), &_OS::set_window_always_on_top);
 	ClassDB::bind_method(D_METHOD("is_window_always_on_top"), &_OS::is_window_always_on_top);
+	ClassDB::bind_method(D_METHOD("is_window_focused"), &_OS::is_window_focused);
 	ClassDB::bind_method(D_METHOD("request_attention"), &_OS::request_attention);
 	ClassDB::bind_method(D_METHOD("get_real_window_size"), &_OS::get_real_window_size);
 	ClassDB::bind_method(D_METHOD("center_window"), &_OS::center_window);
+	ClassDB::bind_method(D_METHOD("move_window_to_foreground"), &_OS::move_window_to_foreground);
 
 	ClassDB::bind_method(D_METHOD("set_borderless_window", "borderless"), &_OS::set_borderless_window);
 	ClassDB::bind_method(D_METHOD("get_borderless_window"), &_OS::get_borderless_window);
@@ -1128,7 +1236,10 @@ void _OS::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_window_per_pixel_transparency_enabled"), &_OS::get_window_per_pixel_transparency_enabled);
 	ClassDB::bind_method(D_METHOD("set_window_per_pixel_transparency_enabled", "enabled"), &_OS::set_window_per_pixel_transparency_enabled);
 
+	ClassDB::bind_method(D_METHOD("set_ime_active", "active"), &_OS::set_ime_active);
 	ClassDB::bind_method(D_METHOD("set_ime_position", "position"), &_OS::set_ime_position);
+	ClassDB::bind_method(D_METHOD("get_ime_selection"), &_OS::get_ime_selection);
+	ClassDB::bind_method(D_METHOD("get_ime_text"), &_OS::get_ime_text);
 
 	ClassDB::bind_method(D_METHOD("set_screen_orientation", "orientation"), &_OS::set_screen_orientation);
 	ClassDB::bind_method(D_METHOD("get_screen_orientation"), &_OS::get_screen_orientation);
@@ -1143,10 +1254,13 @@ void _OS::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_low_processor_usage_mode", "enable"), &_OS::set_low_processor_usage_mode);
 	ClassDB::bind_method(D_METHOD("is_in_low_processor_usage_mode"), &_OS::is_in_low_processor_usage_mode);
 
+	ClassDB::bind_method(D_METHOD("set_low_processor_usage_mode_sleep_usec", "usec"), &_OS::set_low_processor_usage_mode_sleep_usec);
+	ClassDB::bind_method(D_METHOD("get_low_processor_usage_mode_sleep_usec"), &_OS::get_low_processor_usage_mode_sleep_usec);
+
 	ClassDB::bind_method(D_METHOD("get_processor_count"), &_OS::get_processor_count);
 
 	ClassDB::bind_method(D_METHOD("get_executable_path"), &_OS::get_executable_path);
-	ClassDB::bind_method(D_METHOD("execute", "path", "arguments", "blocking", "output"), &_OS::execute, DEFVAL(Array()));
+	ClassDB::bind_method(D_METHOD("execute", "path", "arguments", "blocking", "output", "read_stderr"), &_OS::execute, DEFVAL(true), DEFVAL(Array()), DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("kill", "pid"), &_OS::kill);
 	ClassDB::bind_method(D_METHOD("shell_open", "uri"), &_OS::shell_open);
 	ClassDB::bind_method(D_METHOD("get_process_id"), &_OS::get_process_id);
@@ -1165,7 +1279,9 @@ void _OS::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_datetime_from_unix_time", "unix_time_val"), &_OS::get_datetime_from_unix_time);
 	ClassDB::bind_method(D_METHOD("get_unix_time_from_datetime", "datetime"), &_OS::get_unix_time_from_datetime);
 	ClassDB::bind_method(D_METHOD("get_system_time_secs"), &_OS::get_system_time_secs);
+	ClassDB::bind_method(D_METHOD("get_system_time_msecs"), &_OS::get_system_time_msecs);
 
+	ClassDB::bind_method(D_METHOD("set_native_icon", "filename"), &_OS::set_native_icon);
 	ClassDB::bind_method(D_METHOD("set_icon", "icon"), &_OS::set_icon);
 
 	ClassDB::bind_method(D_METHOD("get_exit_code"), &_OS::get_exit_code);
@@ -1201,7 +1317,6 @@ void _OS::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_static_memory_usage"), &_OS::get_static_memory_usage);
 	ClassDB::bind_method(D_METHOD("get_static_memory_peak_usage"), &_OS::get_static_memory_peak_usage);
-	ClassDB::bind_method(D_METHOD("get_dynamic_memory_usage"), &_OS::get_dynamic_memory_usage);
 
 	ClassDB::bind_method(D_METHOD("get_user_data_dir"), &_OS::get_user_data_dir);
 	ClassDB::bind_method(D_METHOD("get_system_dir", "dir"), &_OS::get_system_dir);
@@ -1231,18 +1346,25 @@ void _OS::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_use_vsync", "enable"), &_OS::set_use_vsync);
 	ClassDB::bind_method(D_METHOD("is_vsync_enabled"), &_OS::is_vsync_enabled);
 
+	ClassDB::bind_method(D_METHOD("set_vsync_via_compositor", "enable"), &_OS::set_vsync_via_compositor);
+	ClassDB::bind_method(D_METHOD("is_vsync_via_compositor_enabled"), &_OS::is_vsync_via_compositor_enabled);
+
 	ClassDB::bind_method(D_METHOD("has_feature", "tag_name"), &_OS::has_feature);
 
-	ClassDB::bind_method(D_METHOD("get_power_state"), &_OS::get_power_state);
-	ClassDB::bind_method(D_METHOD("get_power_seconds_left"), &_OS::get_power_seconds_left);
-	ClassDB::bind_method(D_METHOD("get_power_percent_left"), &_OS::get_power_percent_left);
+	ClassDB::bind_method(D_METHOD("request_permission", "name"), &_OS::request_permission);
+	ClassDB::bind_method(D_METHOD("request_permissions"), &_OS::request_permissions);
+	ClassDB::bind_method(D_METHOD("get_granted_permissions"), &_OS::get_granted_permissions);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "clipboard"), "set_clipboard", "get_clipboard");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "current_screen"), "set_current_screen", "get_current_screen");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "exit_code"), "set_exit_code", "get_exit_code");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "vsync_enabled"), "set_use_vsync", "is_vsync_enabled");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "vsync_via_compositor"), "set_vsync_via_compositor", "is_vsync_via_compositor_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "low_processor_usage_mode"), "set_low_processor_usage_mode", "is_in_low_processor_usage_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "low_processor_usage_mode_sleep_usec"), "set_low_processor_usage_mode_sleep_usec", "get_low_processor_usage_mode_sleep_usec");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "keep_screen_on"), "set_keep_screen_on", "is_keep_screen_on");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "min_window_size"), "set_min_window_size", "get_min_window_size");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "max_window_size"), "set_max_window_size", "get_max_window_size");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "screen_orientation", PROPERTY_HINT_ENUM, "Landscape,Portrait,Reverse Landscape,Reverse Portrait,Sensor Landscape,Sensor Portrait,Sensor"), "set_screen_orientation", "get_screen_orientation");
 	ADD_GROUP("Window", "window_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "window_borderless"), "set_borderless_window", "get_borderless_window");
@@ -1253,6 +1375,31 @@ void _OS::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "window_resizable"), "set_window_resizable", "is_window_resizable");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "window_position"), "set_window_position", "get_window_position");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "window_size"), "set_window_size", "get_window_size");
+
+	// Those default values need to be specified for the docs generator,
+	// to avoid using values from the documentation writer's own OS instance.
+	ADD_PROPERTY_DEFAULT("clipboard", "");
+	ADD_PROPERTY_DEFAULT("current_screen", 0);
+	ADD_PROPERTY_DEFAULT("exit_code", 0);
+	ADD_PROPERTY_DEFAULT("vsync_enabled", true);
+	ADD_PROPERTY_DEFAULT("vsync_via_compositor", false);
+	ADD_PROPERTY_DEFAULT("low_processor_usage_mode", false);
+	ADD_PROPERTY_DEFAULT("low_processor_usage_mode_sleep_usec", 6900);
+	ADD_PROPERTY_DEFAULT("keep_screen_on", true);
+	ADD_PROPERTY_DEFAULT("min_window_size", Vector2());
+	ADD_PROPERTY_DEFAULT("max_window_size", Vector2());
+	ADD_PROPERTY_DEFAULT("screen_orientation", 0);
+	ADD_PROPERTY_DEFAULT("window_borderless", false);
+	ADD_PROPERTY_DEFAULT("window_per_pixel_transparency_enabled", false);
+	ADD_PROPERTY_DEFAULT("window_fullscreen", false);
+	ADD_PROPERTY_DEFAULT("window_maximized", false);
+	ADD_PROPERTY_DEFAULT("window_minimized", false);
+	ADD_PROPERTY_DEFAULT("window_resizable", true);
+	ADD_PROPERTY_DEFAULT("window_position", Vector2());
+	ADD_PROPERTY_DEFAULT("window_size", Vector2());
+
+	BIND_ENUM_CONSTANT(VIDEO_DRIVER_GLES2);
+	BIND_ENUM_CONSTANT(VIDEO_DRIVER_VULKAN);
 
 	BIND_ENUM_CONSTANT(DAY_SUNDAY);
 	BIND_ENUM_CONSTANT(DAY_MONDAY);
@@ -1291,12 +1438,6 @@ void _OS::_bind_methods() {
 	BIND_ENUM_CONSTANT(SYSTEM_DIR_MUSIC);
 	BIND_ENUM_CONSTANT(SYSTEM_DIR_PICTURES);
 	BIND_ENUM_CONSTANT(SYSTEM_DIR_RINGTONES);
-
-	BIND_ENUM_CONSTANT(POWERSTATE_UNKNOWN);
-	BIND_ENUM_CONSTANT(POWERSTATE_ON_BATTERY);
-	BIND_ENUM_CONSTANT(POWERSTATE_NO_BATTERY);
-	BIND_ENUM_CONSTANT(POWERSTATE_CHARGING);
-	BIND_ENUM_CONSTANT(POWERSTATE_CHARGED);
 }
 
 _OS::_OS() {
@@ -1313,18 +1454,23 @@ _Geometry *_Geometry::get_singleton() {
 	return singleton;
 }
 
-PoolVector<Plane> _Geometry::build_box_planes(const Vector3 &p_extents) {
+Vector<Plane> _Geometry::build_box_planes(const Vector3 &p_extents) {
 
 	return Geometry::build_box_planes(p_extents);
 }
 
-PoolVector<Plane> _Geometry::build_cylinder_planes(float p_radius, float p_height, int p_sides, Vector3::Axis p_axis) {
+Vector<Plane> _Geometry::build_cylinder_planes(float p_radius, float p_height, int p_sides, Vector3::Axis p_axis) {
 
 	return Geometry::build_cylinder_planes(p_radius, p_height, p_sides, p_axis);
 }
-PoolVector<Plane> _Geometry::build_capsule_planes(float p_radius, float p_height, int p_sides, int p_lats, Vector3::Axis p_axis) {
+Vector<Plane> _Geometry::build_capsule_planes(float p_radius, float p_height, int p_sides, int p_lats, Vector3::Axis p_axis) {
 
 	return Geometry::build_capsule_planes(p_radius, p_height, p_sides, p_lats, p_axis);
+}
+
+bool _Geometry::is_point_in_circle(const Vector2 &p_point, const Vector2 &p_circle_pos, real_t p_circle_radius) {
+
+	return Geometry::is_point_in_circle(p_point, p_circle_pos, p_circle_radius);
 }
 
 real_t _Geometry::segment_intersects_circle(const Vector2 &p_from, const Vector2 &p_to, const Vector2 &p_circle_pos, real_t p_circle_radius) {
@@ -1353,22 +1499,22 @@ Variant _Geometry::line_intersects_line_2d(const Vector2 &p_from_a, const Vector
 	}
 }
 
-PoolVector<Vector2> _Geometry::get_closest_points_between_segments_2d(const Vector2 &p1, const Vector2 &q1, const Vector2 &p2, const Vector2 &q2) {
+Vector<Vector2> _Geometry::get_closest_points_between_segments_2d(const Vector2 &p1, const Vector2 &q1, const Vector2 &p2, const Vector2 &q2) {
 
 	Vector2 r1, r2;
 	Geometry::get_closest_points_between_segments(p1, q1, p2, q2, r1, r2);
-	PoolVector<Vector2> r;
+	Vector<Vector2> r;
 	r.resize(2);
 	r.set(0, r1);
 	r.set(1, r2);
 	return r;
 }
 
-PoolVector<Vector3> _Geometry::get_closest_points_between_segments(const Vector3 &p1, const Vector3 &p2, const Vector3 &q1, const Vector3 &q2) {
+Vector<Vector3> _Geometry::get_closest_points_between_segments(const Vector3 &p1, const Vector3 &p2, const Vector3 &q1, const Vector3 &q2) {
 
 	Vector3 r1, r2;
 	Geometry::get_closest_points_between_segments(p1, p2, q1, q2, r1, r2);
-	PoolVector<Vector3> r;
+	Vector<Vector3> r;
 	r.resize(2);
 	r.set(0, r1);
 	r.set(1, r2);
@@ -1416,9 +1562,9 @@ bool _Geometry::point_is_inside_triangle(const Vector2 &s, const Vector2 &a, con
 	return Geometry::is_point_in_triangle(s, a, b, c);
 }
 
-PoolVector<Vector3> _Geometry::segment_intersects_sphere(const Vector3 &p_from, const Vector3 &p_to, const Vector3 &p_sphere_pos, real_t p_sphere_radius) {
+Vector<Vector3> _Geometry::segment_intersects_sphere(const Vector3 &p_from, const Vector3 &p_to, const Vector3 &p_sphere_pos, real_t p_sphere_radius) {
 
-	PoolVector<Vector3> r;
+	Vector<Vector3> r;
 	Vector3 res, norm;
 	if (!Geometry::segment_intersects_sphere(p_from, p_to, p_sphere_pos, p_sphere_radius, &res, &norm))
 		return r;
@@ -1428,9 +1574,9 @@ PoolVector<Vector3> _Geometry::segment_intersects_sphere(const Vector3 &p_from, 
 	r.set(1, norm);
 	return r;
 }
-PoolVector<Vector3> _Geometry::segment_intersects_cylinder(const Vector3 &p_from, const Vector3 &p_to, float p_height, float p_radius) {
+Vector<Vector3> _Geometry::segment_intersects_cylinder(const Vector3 &p_from, const Vector3 &p_to, float p_height, float p_radius) {
 
-	PoolVector<Vector3> r;
+	Vector<Vector3> r;
 	Vector3 res, norm;
 	if (!Geometry::segment_intersects_cylinder(p_from, p_to, p_height, p_radius, &res, &norm))
 		return r;
@@ -1440,9 +1586,9 @@ PoolVector<Vector3> _Geometry::segment_intersects_cylinder(const Vector3 &p_from
 	r.set(1, norm);
 	return r;
 }
-PoolVector<Vector3> _Geometry::segment_intersects_convex(const Vector3 &p_from, const Vector3 &p_to, const Vector<Plane> &p_planes) {
+Vector<Vector3> _Geometry::segment_intersects_convex(const Vector3 &p_from, const Vector3 &p_to, const Vector<Plane> &p_planes) {
 
-	PoolVector<Vector3> r;
+	Vector<Vector3> r;
 	Vector3 res, norm;
 	if (!Geometry::segment_intersects_convex(p_from, p_to, p_planes.ptr(), p_planes.size(), &res, &norm))
 		return r;
@@ -1453,9 +1599,24 @@ PoolVector<Vector3> _Geometry::segment_intersects_convex(const Vector3 &p_from, 
 	return r;
 }
 
+bool _Geometry::is_polygon_clockwise(const Vector<Vector2> &p_polygon) {
+
+	return Geometry::is_polygon_clockwise(p_polygon);
+}
+
+bool _Geometry::is_point_in_polygon(const Point2 &p_point, const Vector<Vector2> &p_polygon) {
+
+	return Geometry::is_point_in_polygon(p_point, p_polygon);
+}
+
 Vector<int> _Geometry::triangulate_polygon(const Vector<Vector2> &p_polygon) {
 
 	return Geometry::triangulate_polygon(p_polygon);
+}
+
+Vector<int> _Geometry::triangulate_delaunay_2d(const Vector<Vector2> &p_points) {
+
+	return Geometry::triangulate_delaunay_2d(p_points);
 }
 
 Vector<Point2> _Geometry::convex_hull_2d(const Vector<Point2> &p_points) {
@@ -1466,6 +1627,102 @@ Vector<Point2> _Geometry::convex_hull_2d(const Vector<Point2> &p_points) {
 Vector<Vector3> _Geometry::clip_polygon(const Vector<Vector3> &p_points, const Plane &p_plane) {
 
 	return Geometry::clip_polygon(p_points, p_plane);
+}
+
+Array _Geometry::merge_polygons_2d(const Vector<Vector2> &p_polygon_a, const Vector<Vector2> &p_polygon_b) {
+
+	Vector<Vector<Point2> > polys = Geometry::merge_polygons_2d(p_polygon_a, p_polygon_b);
+
+	Array ret;
+
+	for (int i = 0; i < polys.size(); ++i) {
+		ret.push_back(polys[i]);
+	}
+	return ret;
+}
+
+Array _Geometry::clip_polygons_2d(const Vector<Vector2> &p_polygon_a, const Vector<Vector2> &p_polygon_b) {
+
+	Vector<Vector<Point2> > polys = Geometry::clip_polygons_2d(p_polygon_a, p_polygon_b);
+
+	Array ret;
+
+	for (int i = 0; i < polys.size(); ++i) {
+		ret.push_back(polys[i]);
+	}
+	return ret;
+}
+
+Array _Geometry::intersect_polygons_2d(const Vector<Vector2> &p_polygon_a, const Vector<Vector2> &p_polygon_b) {
+
+	Vector<Vector<Point2> > polys = Geometry::intersect_polygons_2d(p_polygon_a, p_polygon_b);
+
+	Array ret;
+
+	for (int i = 0; i < polys.size(); ++i) {
+		ret.push_back(polys[i]);
+	}
+	return ret;
+}
+
+Array _Geometry::exclude_polygons_2d(const Vector<Vector2> &p_polygon_a, const Vector<Vector2> &p_polygon_b) {
+
+	Vector<Vector<Point2> > polys = Geometry::exclude_polygons_2d(p_polygon_a, p_polygon_b);
+
+	Array ret;
+
+	for (int i = 0; i < polys.size(); ++i) {
+		ret.push_back(polys[i]);
+	}
+	return ret;
+}
+
+Array _Geometry::clip_polyline_with_polygon_2d(const Vector<Vector2> &p_polyline, const Vector<Vector2> &p_polygon) {
+
+	Vector<Vector<Point2> > polys = Geometry::clip_polyline_with_polygon_2d(p_polyline, p_polygon);
+
+	Array ret;
+
+	for (int i = 0; i < polys.size(); ++i) {
+		ret.push_back(polys[i]);
+	}
+	return ret;
+}
+
+Array _Geometry::intersect_polyline_with_polygon_2d(const Vector<Vector2> &p_polyline, const Vector<Vector2> &p_polygon) {
+
+	Vector<Vector<Point2> > polys = Geometry::intersect_polyline_with_polygon_2d(p_polyline, p_polygon);
+
+	Array ret;
+
+	for (int i = 0; i < polys.size(); ++i) {
+		ret.push_back(polys[i]);
+	}
+	return ret;
+}
+
+Array _Geometry::offset_polygon_2d(const Vector<Vector2> &p_polygon, real_t p_delta, PolyJoinType p_join_type) {
+
+	Vector<Vector<Point2> > polys = Geometry::offset_polygon_2d(p_polygon, p_delta, Geometry::PolyJoinType(p_join_type));
+
+	Array ret;
+
+	for (int i = 0; i < polys.size(); ++i) {
+		ret.push_back(polys[i]);
+	}
+	return ret;
+}
+
+Array _Geometry::offset_polyline_2d(const Vector<Vector2> &p_polygon, real_t p_delta, PolyJoinType p_join_type, PolyEndType p_end_type) {
+
+	Vector<Vector<Point2> > polys = Geometry::offset_polyline_2d(p_polygon, p_delta, Geometry::PolyJoinType(p_join_type), Geometry::PolyEndType(p_end_type));
+
+	Array ret;
+
+	for (int i = 0; i < polys.size(); ++i) {
+		ret.push_back(polys[i]);
+	}
+	return ret;
 }
 
 Dictionary _Geometry::make_atlas(const Vector<Size2> &p_rects) {
@@ -1506,6 +1763,7 @@ void _Geometry::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("build_box_planes", "extents"), &_Geometry::build_box_planes);
 	ClassDB::bind_method(D_METHOD("build_cylinder_planes", "radius", "height", "sides", "axis"), &_Geometry::build_cylinder_planes, DEFVAL(Vector3::AXIS_Z));
 	ClassDB::bind_method(D_METHOD("build_capsule_planes", "radius", "height", "sides", "lats", "axis"), &_Geometry::build_capsule_planes, DEFVAL(Vector3::AXIS_Z));
+	ClassDB::bind_method(D_METHOD("is_point_in_circle", "point", "circle_position", "circle_radius"), &_Geometry::is_point_in_circle);
 	ClassDB::bind_method(D_METHOD("segment_intersects_circle", "segment_from", "segment_to", "circle_position", "circle_radius"), &_Geometry::segment_intersects_circle);
 	ClassDB::bind_method(D_METHOD("segment_intersects_segment_2d", "from_a", "to_a", "from_b", "to_b"), &_Geometry::segment_intersects_segment_2d);
 	ClassDB::bind_method(D_METHOD("line_intersects_line_2d", "from_a", "dir_a", "from_b", "dir_b"), &_Geometry::line_intersects_line_2d);
@@ -1528,11 +1786,40 @@ void _Geometry::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("segment_intersects_convex", "from", "to", "planes"), &_Geometry::segment_intersects_convex);
 	ClassDB::bind_method(D_METHOD("point_is_inside_triangle", "point", "a", "b", "c"), &_Geometry::point_is_inside_triangle);
 
+	ClassDB::bind_method(D_METHOD("is_polygon_clockwise", "polygon"), &_Geometry::is_polygon_clockwise);
+	ClassDB::bind_method(D_METHOD("is_point_in_polygon", "point", "polygon"), &_Geometry::is_point_in_polygon);
 	ClassDB::bind_method(D_METHOD("triangulate_polygon", "polygon"), &_Geometry::triangulate_polygon);
+	ClassDB::bind_method(D_METHOD("triangulate_delaunay_2d", "points"), &_Geometry::triangulate_delaunay_2d);
 	ClassDB::bind_method(D_METHOD("convex_hull_2d", "points"), &_Geometry::convex_hull_2d);
 	ClassDB::bind_method(D_METHOD("clip_polygon", "points", "plane"), &_Geometry::clip_polygon);
 
+	ClassDB::bind_method(D_METHOD("merge_polygons_2d", "polygon_a", "polygon_b"), &_Geometry::merge_polygons_2d);
+	ClassDB::bind_method(D_METHOD("clip_polygons_2d", "polygon_a", "polygon_b"), &_Geometry::clip_polygons_2d);
+	ClassDB::bind_method(D_METHOD("intersect_polygons_2d", "polygon_a", "polygon_b"), &_Geometry::intersect_polygons_2d);
+	ClassDB::bind_method(D_METHOD("exclude_polygons_2d", "polygon_a", "polygon_b"), &_Geometry::exclude_polygons_2d);
+
+	ClassDB::bind_method(D_METHOD("clip_polyline_with_polygon_2d", "polyline", "polygon"), &_Geometry::clip_polyline_with_polygon_2d);
+	ClassDB::bind_method(D_METHOD("intersect_polyline_with_polygon_2d", "polyline", "polygon"), &_Geometry::intersect_polyline_with_polygon_2d);
+
+	ClassDB::bind_method(D_METHOD("offset_polygon_2d", "polygon", "delta", "join_type"), &_Geometry::offset_polygon_2d, DEFVAL(JOIN_SQUARE));
+	ClassDB::bind_method(D_METHOD("offset_polyline_2d", "polyline", "delta", "join_type", "end_type"), &_Geometry::offset_polyline_2d, DEFVAL(JOIN_SQUARE), DEFVAL(END_SQUARE));
+
 	ClassDB::bind_method(D_METHOD("make_atlas", "sizes"), &_Geometry::make_atlas);
+
+	BIND_ENUM_CONSTANT(OPERATION_UNION);
+	BIND_ENUM_CONSTANT(OPERATION_DIFFERENCE);
+	BIND_ENUM_CONSTANT(OPERATION_INTERSECTION);
+	BIND_ENUM_CONSTANT(OPERATION_XOR);
+
+	BIND_ENUM_CONSTANT(JOIN_SQUARE);
+	BIND_ENUM_CONSTANT(JOIN_ROUND);
+	BIND_ENUM_CONSTANT(JOIN_MITER);
+
+	BIND_ENUM_CONSTANT(END_POLYGON);
+	BIND_ENUM_CONSTANT(END_JOINED);
+	BIND_ENUM_CONSTANT(END_BUTT);
+	BIND_ENUM_CONSTANT(END_SQUARE);
+	BIND_ENUM_CONSTANT(END_ROUND);
 }
 
 _Geometry::_Geometry() {
@@ -1541,7 +1828,7 @@ _Geometry::_Geometry() {
 
 ///////////////////////// FILE
 
-Error _File::open_encrypted(const String &p_path, int p_mode_flags, const Vector<uint8_t> &p_key) {
+Error _File::open_encrypted(const String &p_path, ModeFlags p_mode_flags, const Vector<uint8_t> &p_key) {
 
 	Error err = open(p_path, p_mode_flags);
 	if (err)
@@ -1558,7 +1845,7 @@ Error _File::open_encrypted(const String &p_path, int p_mode_flags, const Vector
 	return OK;
 }
 
-Error _File::open_encrypted_pass(const String &p_path, int p_mode_flags, const String &p_pass) {
+Error _File::open_encrypted_pass(const String &p_path, ModeFlags p_mode_flags, const String &p_pass) {
 
 	Error err = open(p_path, p_mode_flags);
 	if (err)
@@ -1576,7 +1863,7 @@ Error _File::open_encrypted_pass(const String &p_path, int p_mode_flags, const S
 	return OK;
 }
 
-Error _File::open_compressed(const String &p_path, int p_mode_flags, int p_compress_mode) {
+Error _File::open_compressed(const String &p_path, ModeFlags p_mode_flags, CompressionMode p_compress_mode) {
 
 	FileAccessCompressed *fac = memnew(FileAccessCompressed);
 
@@ -1593,7 +1880,7 @@ Error _File::open_compressed(const String &p_path, int p_mode_flags, int p_compr
 	return OK;
 }
 
-Error _File::open(const String &p_path, int p_mode_flags) {
+Error _File::open(const String &p_path, ModeFlags p_mode_flags) {
 
 	close();
 	Error err;
@@ -1615,96 +1902,96 @@ bool _File::is_open() const {
 }
 String _File::get_path() const {
 
-	ERR_FAIL_COND_V(!f, "");
+	ERR_FAIL_COND_V_MSG(!f, "", "File must be opened before use.");
 	return f->get_path();
 }
 
 String _File::get_path_absolute() const {
 
-	ERR_FAIL_COND_V(!f, "");
+	ERR_FAIL_COND_V_MSG(!f, "", "File must be opened before use.");
 	return f->get_path_absolute();
 }
 
 void _File::seek(int64_t p_position) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 	f->seek(p_position);
 }
 void _File::seek_end(int64_t p_position) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 	f->seek_end(p_position);
 }
 int64_t _File::get_position() const {
 
-	ERR_FAIL_COND_V(!f, 0);
+	ERR_FAIL_COND_V_MSG(!f, 0, "File must be opened before use.");
 	return f->get_position();
 }
 
 int64_t _File::get_len() const {
 
-	ERR_FAIL_COND_V(!f, 0);
+	ERR_FAIL_COND_V_MSG(!f, 0, "File must be opened before use.");
 	return f->get_len();
 }
 
 bool _File::eof_reached() const {
 
-	ERR_FAIL_COND_V(!f, false);
+	ERR_FAIL_COND_V_MSG(!f, false, "File must be opened before use.");
 	return f->eof_reached();
 }
 
 uint8_t _File::get_8() const {
 
-	ERR_FAIL_COND_V(!f, 0);
+	ERR_FAIL_COND_V_MSG(!f, 0, "File must be opened before use.");
 	return f->get_8();
 }
 uint16_t _File::get_16() const {
 
-	ERR_FAIL_COND_V(!f, 0);
+	ERR_FAIL_COND_V_MSG(!f, 0, "File must be opened before use.");
 	return f->get_16();
 }
 uint32_t _File::get_32() const {
 
-	ERR_FAIL_COND_V(!f, 0);
+	ERR_FAIL_COND_V_MSG(!f, 0, "File must be opened before use.");
 	return f->get_32();
 }
 uint64_t _File::get_64() const {
 
-	ERR_FAIL_COND_V(!f, 0);
+	ERR_FAIL_COND_V_MSG(!f, 0, "File must be opened before use.");
 	return f->get_64();
 }
 
 float _File::get_float() const {
 
-	ERR_FAIL_COND_V(!f, 0);
+	ERR_FAIL_COND_V_MSG(!f, 0, "File must be opened before use.");
 	return f->get_float();
 }
 double _File::get_double() const {
 
-	ERR_FAIL_COND_V(!f, 0);
+	ERR_FAIL_COND_V_MSG(!f, 0, "File must be opened before use.");
 	return f->get_double();
 }
 real_t _File::get_real() const {
 
-	ERR_FAIL_COND_V(!f, 0);
+	ERR_FAIL_COND_V_MSG(!f, 0, "File must be opened before use.");
 	return f->get_real();
 }
 
-PoolVector<uint8_t> _File::get_buffer(int p_length) const {
+Vector<uint8_t> _File::get_buffer(int p_length) const {
 
-	PoolVector<uint8_t> data;
-	ERR_FAIL_COND_V(!f, data);
+	Vector<uint8_t> data;
+	ERR_FAIL_COND_V_MSG(!f, data, "File must be opened before use.");
 
-	ERR_FAIL_COND_V(p_length < 0, data);
+	ERR_FAIL_COND_V_MSG(p_length < 0, data, "Length of buffer cannot be smaller than 0.");
 	if (p_length == 0)
 		return data;
-	Error err = data.resize(p_length);
-	ERR_FAIL_COND_V(err != OK, data);
-	PoolVector<uint8_t>::Write w = data.write();
-	int len = f->get_buffer(&w[0], p_length);
-	ERR_FAIL_COND_V(len < 0, PoolVector<uint8_t>());
 
-	w = PoolVector<uint8_t>::Write();
+	Error err = data.resize(p_length);
+	ERR_FAIL_COND_V_MSG(err != OK, data, "Can't resize data to " + itos(p_length) + " elements.");
+
+	uint8_t *w = data.ptrw();
+	int len = f->get_buffer(&w[0], p_length);
+	ERR_FAIL_COND_V(len < 0, Vector<uint8_t>());
 
 	if (len < p_length)
 		data.resize(p_length);
@@ -1714,7 +2001,7 @@ PoolVector<uint8_t> _File::get_buffer(int p_length) const {
 
 String _File::get_as_text() const {
 
-	ERR_FAIL_COND_V(!f, String());
+	ERR_FAIL_COND_V_MSG(!f, String(), "File must be opened before use.");
 
 	String text;
 	size_t original_pos = f->get_position();
@@ -1744,13 +2031,13 @@ String _File::get_sha256(const String &p_path) const {
 
 String _File::get_line() const {
 
-	ERR_FAIL_COND_V(!f, String());
+	ERR_FAIL_COND_V_MSG(!f, String(), "File must be opened before use.");
 	return f->get_line();
 }
 
-Vector<String> _File::get_csv_line(String delim) const {
-	ERR_FAIL_COND_V(!f, Vector<String>());
-	return f->get_csv_line(delim);
+Vector<String> _File::get_csv_line(const String &p_delim) const {
+	ERR_FAIL_COND_V_MSG(!f, Vector<String>(), "File must be opened before use.");
+	return f->get_csv_line(p_delim);
 }
 
 /**< use this for files WRITTEN in _big_ endian machines (ie, amiga/mac)
@@ -1778,84 +2065,89 @@ Error _File::get_error() const {
 
 void _File::store_8(uint8_t p_dest) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	f->store_8(p_dest);
 }
 void _File::store_16(uint16_t p_dest) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	f->store_16(p_dest);
 }
 void _File::store_32(uint32_t p_dest) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	f->store_32(p_dest);
 }
 void _File::store_64(uint64_t p_dest) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	f->store_64(p_dest);
 }
 
 void _File::store_float(float p_dest) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	f->store_float(p_dest);
 }
 void _File::store_double(double p_dest) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	f->store_double(p_dest);
 }
 void _File::store_real(real_t p_real) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	f->store_real(p_real);
 }
 
 void _File::store_string(const String &p_string) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	f->store_string(p_string);
 }
 
 void _File::store_pascal_string(const String &p_string) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	f->store_pascal_string(p_string);
 };
 
 String _File::get_pascal_string() {
 
-	ERR_FAIL_COND_V(!f, "");
+	ERR_FAIL_COND_V_MSG(!f, "", "File must be opened before use.");
 
 	return f->get_pascal_string();
 };
 
 void _File::store_line(const String &p_string) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 	f->store_line(p_string);
 }
 
-void _File::store_buffer(const PoolVector<uint8_t> &p_buffer) {
+void _File::store_csv_line(const Vector<String> &p_values, const String &p_delim) {
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
+	f->store_csv_line(p_values, p_delim);
+}
 
-	ERR_FAIL_COND(!f);
+void _File::store_buffer(const Vector<uint8_t> &p_buffer) {
+
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 
 	int len = p_buffer.size();
 	if (len == 0)
 		return;
 
-	PoolVector<uint8_t>::Read r = p_buffer.read();
+	const uint8_t *r = p_buffer.ptr();
 
 	f->store_buffer(&r[0], len);
 }
@@ -1865,37 +2157,36 @@ bool _File::file_exists(const String &p_name) const {
 	return FileAccess::exists(p_name);
 }
 
-void _File::store_var(const Variant &p_var) {
+void _File::store_var(const Variant &p_var, bool p_full_objects) {
 
-	ERR_FAIL_COND(!f);
+	ERR_FAIL_COND_MSG(!f, "File must be opened before use.");
 	int len;
-	Error err = encode_variant(p_var, NULL, len);
-	ERR_FAIL_COND(err != OK);
+	Error err = encode_variant(p_var, NULL, len, p_full_objects);
+	ERR_FAIL_COND_MSG(err != OK, "Error when trying to encode Variant.");
 
-	PoolVector<uint8_t> buff;
+	Vector<uint8_t> buff;
 	buff.resize(len);
-	PoolVector<uint8_t>::Write w = buff.write();
 
-	err = encode_variant(p_var, &w[0], len);
-	ERR_FAIL_COND(err != OK);
-	w = PoolVector<uint8_t>::Write();
+	uint8_t *w = buff.ptrw();
+	err = encode_variant(p_var, &w[0], len, p_full_objects);
+	ERR_FAIL_COND_MSG(err != OK, "Error when trying to encode Variant.");
 
 	store_32(len);
 	store_buffer(buff);
 }
 
-Variant _File::get_var() const {
+Variant _File::get_var(bool p_allow_objects) const {
 
-	ERR_FAIL_COND_V(!f, Variant());
+	ERR_FAIL_COND_V_MSG(!f, Variant(), "File must be opened before use.");
 	uint32_t len = get_32();
-	PoolVector<uint8_t> buff = get_buffer(len);
+	Vector<uint8_t> buff = get_buffer(len);
 	ERR_FAIL_COND_V((uint32_t)buff.size() != len, Variant());
 
-	PoolVector<uint8_t>::Read r = buff.read();
+	const uint8_t *r = buff.ptr();
 
 	Variant v;
-	Error err = decode_variant(v, &r[0], len);
-	ERR_FAIL_COND_V(err != OK, Variant());
+	Error err = decode_variant(v, &r[0], len, NULL, p_allow_objects);
+	ERR_FAIL_COND_V_MSG(err != OK, Variant(), "Error when trying to encode Variant.");
 
 	return v;
 }
@@ -1930,14 +2221,14 @@ void _File::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_real"), &_File::get_real);
 	ClassDB::bind_method(D_METHOD("get_buffer", "len"), &_File::get_buffer);
 	ClassDB::bind_method(D_METHOD("get_line"), &_File::get_line);
+	ClassDB::bind_method(D_METHOD("get_csv_line", "delim"), &_File::get_csv_line, DEFVAL(","));
 	ClassDB::bind_method(D_METHOD("get_as_text"), &_File::get_as_text);
 	ClassDB::bind_method(D_METHOD("get_md5", "path"), &_File::get_md5);
 	ClassDB::bind_method(D_METHOD("get_sha256", "path"), &_File::get_sha256);
 	ClassDB::bind_method(D_METHOD("get_endian_swap"), &_File::get_endian_swap);
 	ClassDB::bind_method(D_METHOD("set_endian_swap", "enable"), &_File::set_endian_swap);
 	ClassDB::bind_method(D_METHOD("get_error"), &_File::get_error);
-	ClassDB::bind_method(D_METHOD("get_var"), &_File::get_var);
-	ClassDB::bind_method(D_METHOD("get_csv_line", "delim"), &_File::get_csv_line, DEFVAL(","));
+	ClassDB::bind_method(D_METHOD("get_var", "allow_objects"), &_File::get_var, DEFVAL(false));
 
 	ClassDB::bind_method(D_METHOD("store_8", "value"), &_File::store_8);
 	ClassDB::bind_method(D_METHOD("store_16", "value"), &_File::store_16);
@@ -1948,8 +2239,9 @@ void _File::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("store_real", "value"), &_File::store_real);
 	ClassDB::bind_method(D_METHOD("store_buffer", "buffer"), &_File::store_buffer);
 	ClassDB::bind_method(D_METHOD("store_line", "line"), &_File::store_line);
+	ClassDB::bind_method(D_METHOD("store_csv_line", "values", "delim"), &_File::store_csv_line, DEFVAL(","));
 	ClassDB::bind_method(D_METHOD("store_string", "string"), &_File::store_string);
-	ClassDB::bind_method(D_METHOD("store_var", "value"), &_File::store_var);
+	ClassDB::bind_method(D_METHOD("store_var", "value", "full_objects"), &_File::store_var, DEFVAL(false));
 
 	ClassDB::bind_method(D_METHOD("store_pascal_string", "string"), &_File::store_pascal_string);
 	ClassDB::bind_method(D_METHOD("get_pascal_string"), &_File::get_pascal_string);
@@ -1999,7 +2291,7 @@ Error _Directory::open(const String &p_path) {
 
 Error _Directory::list_dir_begin(bool p_skip_navigational, bool p_skip_hidden) {
 
-	ERR_FAIL_COND_V(!d, ERR_UNCONFIGURED);
+	ERR_FAIL_COND_V_MSG(!d, ERR_UNCONFIGURED, "Directory must be opened before use.");
 
 	_list_skip_navigational = p_skip_navigational;
 	_list_skip_hidden = p_skip_hidden;
@@ -2009,7 +2301,7 @@ Error _Directory::list_dir_begin(bool p_skip_navigational, bool p_skip_hidden) {
 
 String _Directory::get_next() {
 
-	ERR_FAIL_COND_V(!d, "");
+	ERR_FAIL_COND_V_MSG(!d, "", "Directory must be opened before use.");
 
 	String next = d->get_next();
 	while (next != "" && ((_list_skip_navigational && (next == "." || next == "..")) || (_list_skip_hidden && d->current_is_hidden()))) {
@@ -2020,44 +2312,44 @@ String _Directory::get_next() {
 }
 bool _Directory::current_is_dir() const {
 
-	ERR_FAIL_COND_V(!d, false);
+	ERR_FAIL_COND_V_MSG(!d, false, "Directory must be opened before use.");
 	return d->current_is_dir();
 }
 
 void _Directory::list_dir_end() {
 
-	ERR_FAIL_COND(!d);
-	return d->list_dir_end();
+	ERR_FAIL_COND_MSG(!d, "Directory must be opened before use.");
+	d->list_dir_end();
 }
 
 int _Directory::get_drive_count() {
 
-	ERR_FAIL_COND_V(!d, 0);
+	ERR_FAIL_COND_V_MSG(!d, 0, "Directory must be opened before use.");
 	return d->get_drive_count();
 }
 String _Directory::get_drive(int p_drive) {
 
-	ERR_FAIL_COND_V(!d, "");
+	ERR_FAIL_COND_V_MSG(!d, "", "Directory must be opened before use.");
 	return d->get_drive(p_drive);
 }
 int _Directory::get_current_drive() {
-	ERR_FAIL_COND_V(!d, 0);
+	ERR_FAIL_COND_V_MSG(!d, 0, "Directory must be opened before use.");
 	return d->get_current_drive();
 }
 
 Error _Directory::change_dir(String p_dir) {
 
-	ERR_FAIL_COND_V(!d, ERR_UNCONFIGURED);
+	ERR_FAIL_COND_V_MSG(!d, ERR_UNCONFIGURED, "Directory must be opened before use.");
 	return d->change_dir(p_dir);
 }
 String _Directory::get_current_dir() {
 
-	ERR_FAIL_COND_V(!d, "");
+	ERR_FAIL_COND_V_MSG(!d, "", "Directory must be opened before use.");
 	return d->get_current_dir();
 }
 Error _Directory::make_dir(String p_dir) {
 
-	ERR_FAIL_COND_V(!d, ERR_UNCONFIGURED);
+	ERR_FAIL_COND_V_MSG(!d, ERR_UNCONFIGURED, "Directory must be opened before use.");
 	if (!p_dir.is_rel_path()) {
 		DirAccess *d = DirAccess::create_for_path(p_dir);
 		Error err = d->make_dir(p_dir);
@@ -2068,7 +2360,7 @@ Error _Directory::make_dir(String p_dir) {
 }
 Error _Directory::make_dir_recursive(String p_dir) {
 
-	ERR_FAIL_COND_V(!d, ERR_UNCONFIGURED);
+	ERR_FAIL_COND_V_MSG(!d, ERR_UNCONFIGURED, "Directory must be opened before use.");
 	if (!p_dir.is_rel_path()) {
 		DirAccess *d = DirAccess::create_for_path(p_dir);
 		Error err = d->make_dir_recursive(p_dir);
@@ -2080,7 +2372,7 @@ Error _Directory::make_dir_recursive(String p_dir) {
 
 bool _Directory::file_exists(String p_file) {
 
-	ERR_FAIL_COND_V(!d, false);
+	ERR_FAIL_COND_V_MSG(!d, false, "Directory must be opened before use.");
 
 	if (!p_file.is_rel_path()) {
 		return FileAccess::exists(p_file);
@@ -2090,7 +2382,7 @@ bool _Directory::file_exists(String p_file) {
 }
 
 bool _Directory::dir_exists(String p_dir) {
-	ERR_FAIL_COND_V(!d, false);
+	ERR_FAIL_COND_V_MSG(!d, false, "Directory must be opened before use.");
 	if (!p_dir.is_rel_path()) {
 
 		DirAccess *d = DirAccess::create_for_path(p_dir);
@@ -2105,18 +2397,18 @@ bool _Directory::dir_exists(String p_dir) {
 
 int _Directory::get_space_left() {
 
-	ERR_FAIL_COND_V(!d, 0);
+	ERR_FAIL_COND_V_MSG(!d, 0, "Directory must be opened before use.");
 	return d->get_space_left() / 1024 * 1024; //return value in megabytes, given binding is int
 }
 
 Error _Directory::copy(String p_from, String p_to) {
 
-	ERR_FAIL_COND_V(!d, ERR_UNCONFIGURED);
+	ERR_FAIL_COND_V_MSG(!d, ERR_UNCONFIGURED, "Directory must be opened before use.");
 	return d->copy(p_from, p_to);
 }
 Error _Directory::rename(String p_from, String p_to) {
 
-	ERR_FAIL_COND_V(!d, ERR_UNCONFIGURED);
+	ERR_FAIL_COND_V_MSG(!d, ERR_UNCONFIGURED, "Directory must be opened before use.");
 	if (!p_from.is_rel_path()) {
 		DirAccess *d = DirAccess::create_for_path(p_from);
 		Error err = d->rename(p_from, p_to);
@@ -2128,7 +2420,7 @@ Error _Directory::rename(String p_from, String p_to) {
 }
 Error _Directory::remove(String p_name) {
 
-	ERR_FAIL_COND_V(!d, ERR_UNCONFIGURED);
+	ERR_FAIL_COND_V_MSG(!d, ERR_UNCONFIGURED, "Directory must be opened before use.");
 	if (!p_name.is_rel_path()) {
 		DirAccess *d = DirAccess::create_for_path(p_name);
 		Error err = d->remove(p_name);
@@ -2179,101 +2471,74 @@ _Marshalls *_Marshalls::get_singleton() {
 	return singleton;
 }
 
-String _Marshalls::variant_to_base64(const Variant &p_var) {
+String _Marshalls::variant_to_base64(const Variant &p_var, bool p_full_objects) {
 
 	int len;
-	Error err = encode_variant(p_var, NULL, len);
-	ERR_FAIL_COND_V(err != OK, "");
+	Error err = encode_variant(p_var, NULL, len, p_full_objects);
+	ERR_FAIL_COND_V_MSG(err != OK, "", "Error when trying to encode Variant.");
 
-	PoolVector<uint8_t> buff;
+	Vector<uint8_t> buff;
 	buff.resize(len);
-	PoolVector<uint8_t>::Write w = buff.write();
+	uint8_t *w = buff.ptrw();
 
-	err = encode_variant(p_var, &w[0], len);
-	ERR_FAIL_COND_V(err != OK, "");
+	err = encode_variant(p_var, &w[0], len, p_full_objects);
+	ERR_FAIL_COND_V_MSG(err != OK, "", "Error when trying to encode Variant.");
 
-	int b64len = len / 3 * 4 + 4 + 1;
-	PoolVector<uint8_t> b64buff;
-	b64buff.resize(b64len);
-	PoolVector<uint8_t>::Write w64 = b64buff.write();
-
-	int strlen = base64_encode((char *)(&w64[0]), (char *)(&w[0]), len);
-	//OS::get_singleton()->print("len is %i, vector size is %i\n", b64len, strlen);
-	w64[strlen] = 0;
-	String ret = (char *)&w64[0];
+	String ret = CryptoCore::b64_encode_str(&w[0], len);
+	ERR_FAIL_COND_V(ret == "", ret);
 
 	return ret;
 };
 
-Variant _Marshalls::base64_to_variant(const String &p_str) {
+Variant _Marshalls::base64_to_variant(const String &p_str, bool p_allow_objects) {
 
 	int strlen = p_str.length();
 	CharString cstr = p_str.ascii();
 
-	PoolVector<uint8_t> buf;
+	Vector<uint8_t> buf;
 	buf.resize(strlen / 4 * 3 + 1);
-	PoolVector<uint8_t>::Write w = buf.write();
+	uint8_t *w = buf.ptrw();
 
-	int len = base64_decode((char *)(&w[0]), (char *)cstr.get_data(), strlen);
+	size_t len = 0;
+	ERR_FAIL_COND_V(CryptoCore::b64_decode(&w[0], buf.size(), &len, (unsigned char *)cstr.get_data(), strlen) != OK, Variant());
 
 	Variant v;
-	Error err = decode_variant(v, &w[0], len);
-	ERR_FAIL_COND_V(err != OK, Variant());
+	Error err = decode_variant(v, &w[0], len, NULL, p_allow_objects);
+	ERR_FAIL_COND_V_MSG(err != OK, Variant(), "Error when trying to decode Variant.");
 
 	return v;
 };
 
-String _Marshalls::raw_to_base64(const PoolVector<uint8_t> &p_arr) {
+String _Marshalls::raw_to_base64(const Vector<uint8_t> &p_arr) {
 
-	int len = p_arr.size();
-	PoolVector<uint8_t>::Read r = p_arr.read();
-
-	int b64len = len / 3 * 4 + 4 + 1;
-	PoolVector<uint8_t> b64buff;
-	b64buff.resize(b64len);
-	PoolVector<uint8_t>::Write w64 = b64buff.write();
-
-	int strlen = base64_encode((char *)(&w64[0]), (char *)(&r[0]), len);
-	w64[strlen] = 0;
-	String ret = (char *)&w64[0];
-
+	String ret = CryptoCore::b64_encode_str(p_arr.ptr(), p_arr.size());
+	ERR_FAIL_COND_V(ret == "", ret);
 	return ret;
 };
 
-PoolVector<uint8_t> _Marshalls::base64_to_raw(const String &p_str) {
+Vector<uint8_t> _Marshalls::base64_to_raw(const String &p_str) {
 
 	int strlen = p_str.length();
 	CharString cstr = p_str.ascii();
 
-	int arr_len;
-	PoolVector<uint8_t> buf;
+	size_t arr_len = 0;
+	Vector<uint8_t> buf;
 	{
 		buf.resize(strlen / 4 * 3 + 1);
-		PoolVector<uint8_t>::Write w = buf.write();
+		uint8_t *w = buf.ptrw();
 
-		arr_len = base64_decode((char *)(&w[0]), (char *)cstr.get_data(), strlen);
-	};
+		ERR_FAIL_COND_V(CryptoCore::b64_decode(&w[0], buf.size(), &arr_len, (unsigned char *)cstr.get_data(), strlen) != OK, Vector<uint8_t>());
+	}
 	buf.resize(arr_len);
 
-	// conversion from PoolVector<uint8_t> to raw array?
 	return buf;
 };
 
 String _Marshalls::utf8_to_base64(const String &p_str) {
 
 	CharString cstr = p_str.utf8();
-	int len = cstr.length();
-
-	int b64len = len / 3 * 4 + 4 + 1;
-	PoolVector<uint8_t> b64buff;
-	b64buff.resize(b64len);
-	PoolVector<uint8_t>::Write w64 = b64buff.write();
-
-	int strlen = base64_encode((char *)(&w64[0]), (char *)cstr.get_data(), len);
-
-	w64[strlen] = 0;
-	String ret = (char *)&w64[0];
-
+	String ret = CryptoCore::b64_encode_str((unsigned char *)cstr.get_data(), cstr.length());
+	ERR_FAIL_COND_V(ret == "", ret);
 	return ret;
 };
 
@@ -2282,11 +2547,12 @@ String _Marshalls::base64_to_utf8(const String &p_str) {
 	int strlen = p_str.length();
 	CharString cstr = p_str.ascii();
 
-	PoolVector<uint8_t> buf;
+	Vector<uint8_t> buf;
 	buf.resize(strlen / 4 * 3 + 1 + 1);
-	PoolVector<uint8_t>::Write w = buf.write();
+	uint8_t *w = buf.ptrw();
 
-	int len = base64_decode((char *)(&w[0]), (char *)cstr.get_data(), strlen);
+	size_t len = 0;
+	ERR_FAIL_COND_V(CryptoCore::b64_decode(&w[0], buf.size(), &len, (unsigned char *)cstr.get_data(), strlen) != OK, String());
 
 	w[len] = 0;
 	String ret = String::utf8((char *)&w[0]);
@@ -2296,8 +2562,8 @@ String _Marshalls::base64_to_utf8(const String &p_str) {
 
 void _Marshalls::_bind_methods() {
 
-	ClassDB::bind_method(D_METHOD("variant_to_base64", "variant"), &_Marshalls::variant_to_base64);
-	ClassDB::bind_method(D_METHOD("base64_to_variant", "base64_str"), &_Marshalls::base64_to_variant);
+	ClassDB::bind_method(D_METHOD("variant_to_base64", "variant", "full_objects"), &_Marshalls::variant_to_base64, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("base64_to_variant", "base64_str", "allow_objects"), &_Marshalls::base64_to_variant, DEFVAL(false));
 
 	ClassDB::bind_method(D_METHOD("raw_to_base64", "array"), &_Marshalls::raw_to_base64);
 	ClassDB::bind_method(D_METHOD("base64_to_raw", "base64_str"), &_Marshalls::base64_to_raw);
@@ -2326,7 +2592,7 @@ void _Semaphore::_bind_methods() {
 
 _Semaphore::_Semaphore() {
 
-	semaphore = Semaphore::create();
+	semaphore = SemaphoreOld::create();
 }
 
 _Semaphore::~_Semaphore() {
@@ -2338,17 +2604,17 @@ _Semaphore::~_Semaphore() {
 
 void _Mutex::lock() {
 
-	mutex->lock();
+	mutex.lock();
 }
 
 Error _Mutex::try_lock() {
 
-	return mutex->try_lock();
+	return mutex.try_lock();
 }
 
 void _Mutex::unlock() {
 
-	mutex->unlock();
+	mutex.unlock();
 }
 
 void _Mutex::_bind_methods() {
@@ -2358,16 +2624,6 @@ void _Mutex::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("unlock"), &_Mutex::unlock);
 }
 
-_Mutex::_Mutex() {
-
-	mutex = Mutex::create();
-}
-
-_Mutex::~_Mutex() {
-
-	memdelete(mutex);
-}
-
 ///////////////
 
 void _Thread::_start_func(void *ud) {
@@ -2375,46 +2631,46 @@ void _Thread::_start_func(void *ud) {
 	Ref<_Thread> *tud = (Ref<_Thread> *)ud;
 	Ref<_Thread> t = *tud;
 	memdelete(tud);
-	Variant::CallError ce;
+	Callable::CallError ce;
 	const Variant *arg[1] = { &t->userdata };
 
 	Thread::set_name(t->target_method);
 
 	t->ret = t->target_instance->call(t->target_method, arg, 1, ce);
-	if (ce.error != Variant::CallError::CALL_OK) {
+	if (ce.error != Callable::CallError::CALL_OK) {
 
 		String reason;
 		switch (ce.error) {
-			case Variant::CallError::CALL_ERROR_INVALID_ARGUMENT: {
+			case Callable::CallError::CALL_ERROR_INVALID_ARGUMENT: {
 
 				reason = "Invalid Argument #" + itos(ce.argument);
 			} break;
-			case Variant::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS: {
+			case Callable::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS: {
 
 				reason = "Too Many Arguments";
 			} break;
-			case Variant::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS: {
+			case Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS: {
 
-				reason = "Too Many Arguments";
+				reason = "Too Few Arguments";
 			} break;
-			case Variant::CallError::CALL_ERROR_INVALID_METHOD: {
+			case Callable::CallError::CALL_ERROR_INVALID_METHOD: {
 
 				reason = "Method Not Found";
 			} break;
-			default: {}
+			default: {
+			}
 		}
 
-		ERR_EXPLAIN("Could not call function '" + t->target_method.operator String() + "'' starting thread ID: " + t->get_id() + " Reason: " + reason);
-		ERR_FAIL();
+		ERR_FAIL_MSG("Could not call function '" + t->target_method.operator String() + "' to start thread " + t->get_id() + ": " + reason + ".");
 	}
 }
 
-Error _Thread::start(Object *p_instance, const StringName &p_method, const Variant &p_userdata, int p_priority) {
+Error _Thread::start(Object *p_instance, const StringName &p_method, const Variant &p_userdata, Priority p_priority) {
 
-	ERR_FAIL_COND_V(active, ERR_ALREADY_IN_USE);
+	ERR_FAIL_COND_V_MSG(active, ERR_ALREADY_IN_USE, "Thread already started.");
 	ERR_FAIL_COND_V(!p_instance, ERR_INVALID_PARAMETER);
 	ERR_FAIL_COND_V(p_method == StringName(), ERR_INVALID_PARAMETER);
-	ERR_FAIL_INDEX_V(p_priority, 3, ERR_INVALID_PARAMETER);
+	ERR_FAIL_INDEX_V(p_priority, PRIORITY_MAX, ERR_INVALID_PARAMETER);
 
 	ret = Variant();
 	target_method = p_method;
@@ -2452,14 +2708,16 @@ bool _Thread::is_active() const {
 }
 Variant _Thread::wait_to_finish() {
 
-	ERR_FAIL_COND_V(!thread, Variant());
-	ERR_FAIL_COND_V(!active, Variant());
+	ERR_FAIL_COND_V_MSG(!thread, Variant(), "Thread must exist to wait for its completion.");
+	ERR_FAIL_COND_V_MSG(!active, Variant(), "Thread must be active to wait for its completion.");
 	Thread::wait_to_finish(thread);
 	Variant r = ret;
 	active = false;
 	target_method = StringName();
 	target_instance = NULL;
 	userdata = Variant();
+	if (thread)
+		memdelete(thread);
 	thread = NULL;
 
 	return r;
@@ -2485,19 +2743,17 @@ _Thread::_Thread() {
 
 _Thread::~_Thread() {
 
-	if (active) {
-		ERR_EXPLAIN("Reference to a Thread object object was lost while the thread is still running...");
-	}
-	ERR_FAIL_COND(active);
+	ERR_FAIL_COND_MSG(active, "Reference to a Thread object was lost while the thread is still running...");
 }
+
 /////////////////////////////////////
 
-PoolStringArray _ClassDB::get_class_list() const {
+PackedStringArray _ClassDB::get_class_list() const {
 
 	List<StringName> classes;
 	ClassDB::get_class_list(&classes);
 
-	PoolStringArray ret;
+	PackedStringArray ret;
 	ret.resize(classes.size());
 	int idx = 0;
 	for (List<StringName>::Element *E = classes.front(); E; E = E->next()) {
@@ -2506,12 +2762,12 @@ PoolStringArray _ClassDB::get_class_list() const {
 
 	return ret;
 }
-PoolStringArray _ClassDB::get_inheriters_from_class(const StringName &p_class) const {
+PackedStringArray _ClassDB::get_inheriters_from_class(const StringName &p_class) const {
 
 	List<StringName> classes;
 	ClassDB::get_inheriters_from_class(p_class, &classes);
 
-	PoolStringArray ret;
+	PackedStringArray ret;
 	ret.resize(classes.size());
 	int idx = 0;
 	for (List<StringName>::Element *E = classes.front(); E; E = E->next()) {
@@ -2629,12 +2885,12 @@ Array _ClassDB::get_method_list(StringName p_class, bool p_no_inheritance) const
 	return ret;
 }
 
-PoolStringArray _ClassDB::get_integer_constant_list(const StringName &p_class, bool p_no_inheritance) const {
+PackedStringArray _ClassDB::get_integer_constant_list(const StringName &p_class, bool p_no_inheritance) const {
 
 	List<String> constants;
 	ClassDB::get_integer_constant_list(p_class, &constants, p_no_inheritance);
 
-	PoolStringArray ret;
+	PackedStringArray ret;
 	ret.resize(constants.size());
 	int idx = 0;
 	for (List<String>::Element *E = constants.front(); E; E = E->next()) {
@@ -2722,6 +2978,10 @@ float _Engine::get_physics_jitter_fix() const {
 	return Engine::get_singleton()->get_physics_jitter_fix();
 }
 
+float _Engine::get_physics_interpolation_fraction() const {
+	return Engine::get_singleton()->get_physics_interpolation_fraction();
+}
+
 void _Engine::set_target_fps(int p_fps) {
 	Engine::get_singleton()->set_target_fps(p_fps);
 }
@@ -2733,6 +2993,16 @@ int _Engine::get_target_fps() const {
 float _Engine::get_frames_per_second() const {
 
 	return Engine::get_singleton()->get_frames_per_second();
+}
+
+uint64_t _Engine::get_physics_frames() const {
+
+	return Engine::get_singleton()->get_physics_frames();
+}
+
+uint64_t _Engine::get_idle_frames() const {
+
+	return Engine::get_singleton()->get_idle_frames();
 }
 
 void _Engine::set_time_scale(float p_scale) {
@@ -2810,6 +3080,7 @@ void _Engine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_iterations_per_second"), &_Engine::get_iterations_per_second);
 	ClassDB::bind_method(D_METHOD("set_physics_jitter_fix", "physics_jitter_fix"), &_Engine::set_physics_jitter_fix);
 	ClassDB::bind_method(D_METHOD("get_physics_jitter_fix"), &_Engine::get_physics_jitter_fix);
+	ClassDB::bind_method(D_METHOD("get_physics_interpolation_fraction"), &_Engine::get_physics_interpolation_fraction);
 	ClassDB::bind_method(D_METHOD("set_target_fps", "target_fps"), &_Engine::set_target_fps);
 	ClassDB::bind_method(D_METHOD("get_target_fps"), &_Engine::get_target_fps);
 
@@ -2818,6 +3089,8 @@ void _Engine::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_frames_drawn"), &_Engine::get_frames_drawn);
 	ClassDB::bind_method(D_METHOD("get_frames_per_second"), &_Engine::get_frames_per_second);
+	ClassDB::bind_method(D_METHOD("get_physics_frames"), &_Engine::get_physics_frames);
+	ClassDB::bind_method(D_METHOD("get_idle_frames"), &_Engine::get_idle_frames);
 
 	ClassDB::bind_method(D_METHOD("get_main_loop"), &_Engine::get_main_loop);
 
@@ -2839,8 +3112,8 @@ void _Engine::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editor_hint"), "set_editor_hint", "is_editor_hint");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "iterations_per_second"), "set_iterations_per_second", "get_iterations_per_second");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "target_fps"), "set_target_fps", "get_target_fps");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "time_scale"), "set_time_scale", "get_time_scale");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "physics_jitter_fix"), "set_physics_jitter_fix", "get_physics_jitter_fix");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "time_scale"), "set_time_scale", "get_time_scale");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "physics_jitter_fix"), "set_physics_jitter_fix", "get_physics_jitter_fix");
 }
 
 _Engine *_Engine::singleton = NULL;
@@ -2860,10 +3133,10 @@ void JSONParseResult::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_error_line", "error_line"), &JSONParseResult::set_error_line);
 	ClassDB::bind_method(D_METHOD("set_result", "result"), &JSONParseResult::set_result);
 
-	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "error", PROPERTY_HINT_NONE, "Error", PROPERTY_USAGE_CLASS_IS_ENUM), "set_error", "get_error");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::STRING, "error_string"), "set_error_string", "get_error_string");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::INT, "error_line"), "set_error_line", "get_error_line");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::NIL, "result", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NIL_IS_VARIANT), "set_result", "get_result");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "error", PROPERTY_HINT_NONE, "Error", PROPERTY_USAGE_CLASS_IS_ENUM), "set_error", "get_error");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "error_string"), "set_error_string", "get_error_string");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "error_line"), "set_error_line", "get_error_line");
+	ADD_PROPERTY(PropertyInfo(Variant::NIL, "result", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NIL_IS_VARIANT), "set_result", "get_result");
 }
 
 void JSONParseResult::set_error(Error p_error) {
@@ -2913,6 +3186,9 @@ Ref<JSONParseResult> _JSON::parse(const String &p_json) {
 
 	result->error = JSON::parse(p_json, result->result, result->error_string, result->error_line);
 
+	if (result->error != OK) {
+		ERR_PRINT(vformat("Error parsing JSON at line %s: %s", result->error_line, result->error_string));
+	}
 	return result;
 }
 

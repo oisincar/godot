@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,8 +32,52 @@
 
 #include "core/project_settings.h"
 #include "visual_server_canvas.h"
-#include "visual_server_global.h"
+#include "visual_server_globals.h"
 #include "visual_server_scene.h"
+
+static Transform2D _canvas_get_transform(VisualServerViewport::Viewport *p_viewport, VisualServerCanvas::Canvas *p_canvas, VisualServerViewport::Viewport::CanvasData *p_canvas_data, const Vector2 &p_vp_size) {
+
+	Transform2D xf = p_viewport->global_transform;
+
+	float scale = 1.0;
+	if (p_viewport->canvas_map.has(p_canvas->parent)) {
+		xf = xf * p_viewport->canvas_map[p_canvas->parent].transform;
+		scale = p_canvas->parent_scale;
+	}
+
+	xf = xf * p_canvas_data->transform;
+
+	if (scale != 1.0 && !VSG::canvas->disable_scale) {
+		Vector2 pivot = p_vp_size * 0.5;
+		Transform2D xfpivot;
+		xfpivot.set_origin(pivot);
+		Transform2D xfscale;
+		xfscale.scale(Vector2(scale, scale));
+
+		xf = xfpivot.affine_inverse() * xf;
+		xf = xfscale * xf;
+		xf = xfpivot * xf;
+	}
+
+	return xf;
+}
+
+void VisualServerViewport::_draw_3d(Viewport *p_viewport, ARVRInterface::Eyes p_eye) {
+
+	RENDER_TIMESTAMP(">Begin Rendering 3D Scene");
+
+	Ref<ARVRInterface> arvr_interface;
+	if (ARVRServer::get_singleton() != NULL) {
+		arvr_interface = ARVRServer::get_singleton()->get_primary_interface();
+	}
+
+	if (p_viewport->use_arvr && arvr_interface.is_valid()) {
+		VSG::scene->render_camera(p_viewport->render_buffers, arvr_interface, p_eye, p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
+	} else {
+		VSG::scene->render_camera(p_viewport->render_buffers, p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
+	}
+	RENDER_TIMESTAMP("<End Rendering 3D Scene");
+}
 
 void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::Eyes p_eye) {
 
@@ -42,9 +86,12 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 	bool scenario_draw_canvas_bg = false; //draw canvas, or some layer of it, as BG for 3D instead of in front
 	int scenario_canvas_max_layer = 0;
 
+	Color bgcolor = VSG::storage->get_default_clear_color();
+
 	if (!p_viewport->hide_canvas && !p_viewport->disable_environment && VSG::scene->scenario_owner.owns(p_viewport->scenario)) {
 
-		VisualServerScene::Scenario *scenario = VSG::scene->scenario_owner.get(p_viewport->scenario);
+		VisualServerScene::Scenario *scenario = VSG::scene->scenario_owner.getornull(p_viewport->scenario);
+		ERR_FAIL_COND(!scenario);
 		if (VSG::scene_render->is_environment(scenario->environment)) {
 			scenario_draw_canvas_bg = VSG::scene_render->environment_get_background(scenario->environment) == VS::ENV_BG_CANVAS;
 
@@ -52,23 +99,27 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 		}
 	}
 
-	bool can_draw_3d = !p_viewport->disable_3d && !p_viewport->disable_3d_by_usage && VSG::scene->camera_owner.owns(p_viewport->camera);
+	bool can_draw_3d = VSG::scene->camera_owner.owns(p_viewport->camera);
 
 	if (p_viewport->clear_mode != VS::VIEWPORT_CLEAR_NEVER) {
-		VSG::rasterizer->clear_render_target(p_viewport->transparent_bg ? Color(0, 0, 0, 0) : clear_color);
+		if (p_viewport->transparent_bg) {
+			bgcolor = Color(0, 0, 0, 0);
+		}
 		if (p_viewport->clear_mode == VS::VIEWPORT_CLEAR_ONLY_NEXT_FRAME) {
 			p_viewport->clear_mode = VS::VIEWPORT_CLEAR_NEVER;
 		}
 	}
 
-	if (!scenario_draw_canvas_bg && can_draw_3d) {
-		Ref<ARVRInterface> arvr_interface = ARVRServer::get_singleton()->get_primary_interface();
+	if ((scenario_draw_canvas_bg || can_draw_3d) && !p_viewport->render_buffers.is_valid()) {
+		//wants to draw 3D but there is no render buffer, create
+		p_viewport->render_buffers = VSG::scene_render->render_buffers_create();
+		VSG::scene_render->render_buffers_configure(p_viewport->render_buffers, p_viewport->render_target, p_viewport->size.width, p_viewport->size.height, p_viewport->msaa);
+	}
 
-		if (p_viewport->use_arvr && arvr_interface.is_valid()) {
-			VSG::scene->render_camera(arvr_interface, p_eye, p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
-		} else {
-			VSG::scene->render_camera(p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
-		}
+	VSG::storage->render_target_request_clear(p_viewport->render_target, bgcolor);
+
+	if (!scenario_draw_canvas_bg && can_draw_3d) {
+		_draw_3d(p_viewport, p_eye);
 	}
 
 	if (!p_viewport->hide_canvas) {
@@ -84,11 +135,12 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 
 		int light_count = 0;
 
+		RENDER_TIMESTAMP("Cull Canvas Lights");
 		for (Map<RID, Viewport::CanvasData>::Element *E = p_viewport->canvas_map.front(); E; E = E->next()) {
 
-			Transform2D xf = p_viewport->global_transform * E->get().transform;
-
 			VisualServerCanvas::Canvas *canvas = static_cast<VisualServerCanvas::Canvas *>(E->get().canvas);
+
+			Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E->get(), clip_rect.size);
 
 			//find lights in canvas
 
@@ -97,7 +149,7 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 				RasterizerCanvas::Light *cl = F->get();
 				if (cl->enabled && cl->texture.is_valid()) {
 					//not super efficient..
-					Size2 tsize(VSG::storage->texture_get_width(cl->texture), VSG::storage->texture_get_height(cl->texture));
+					Size2 tsize = VSG::storage->texture_size_with_proxy(cl->texture);
 					tsize *= cl->scale;
 
 					Vector2 offset = tsize / 2.0;
@@ -108,13 +160,13 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 
 						cl->filter_next_ptr = lights;
 						lights = cl;
-						cl->texture_cache = NULL;
+						//						cl->texture_cache = NULL;
 						Transform2D scale;
 						scale.scale(cl->rect_cache.size);
 						scale.elements[2] = cl->rect_cache.position;
-						cl->light_shader_xform = (cl->xform_cache * scale).affine_inverse();
-						cl->light_shader_pos = cl->xform_cache[2];
-						if (cl->shadow_buffer.is_valid()) {
+						cl->light_shader_xform = cl->xform * scale;
+						//cl->light_shader_pos = cl->xform_cache[2];
+						if (cl->use_shadow) {
 
 							cl->shadows_next_ptr = lights_with_shadow;
 							if (lights_with_shadow == NULL) {
@@ -133,7 +185,8 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 						light_count++;
 					}
 
-					VSG::canvas_render->light_internal_update(cl->light_internal, cl);
+					//guess this is not needed, but keeping because it may be
+					//VSG::canvas_render->light_internal_update(cl->light_internal, cl);
 				}
 			}
 
@@ -145,11 +198,14 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 
 			RasterizerCanvas::LightOccluderInstance *occluders = NULL;
 
+			RENDER_TIMESTAMP(">Render 2D Shadows");
+			RENDER_TIMESTAMP("Cull Occluders");
+
 			//make list of occluders
 			for (Map<RID, Viewport::CanvasData>::Element *E = p_viewport->canvas_map.front(); E; E = E->next()) {
 
 				VisualServerCanvas::Canvas *canvas = static_cast<VisualServerCanvas::Canvas *>(E->get().canvas);
-				Transform2D xf = p_viewport->global_transform * E->get().transform;
+				Transform2D xf = _canvas_get_transform(p_viewport, canvas, &E->get(), clip_rect.size);
 
 				for (Set<RasterizerCanvas::LightOccluderInstance *>::Element *F = canvas->occluders.front(); F; F = F->next()) {
 
@@ -164,27 +220,25 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 				}
 			}
 			//update the light shadowmaps with them
+
 			RasterizerCanvas::Light *light = lights_with_shadow;
 			while (light) {
 
-				VSG::canvas_render->canvas_light_shadow_buffer_update(light->shadow_buffer, light->xform_cache.affine_inverse(), light->item_mask, light->radius_cache / 1000.0, light->radius_cache * 1.1, occluders, &light->shadow_matrix_cache);
+				RENDER_TIMESTAMP("Render Shadow");
+
+				VSG::canvas_render->light_update_shadow(light->light_internal, light->xform_cache.affine_inverse(), light->item_shadow_mask, light->radius_cache / 1000.0, light->radius_cache * 1.1, occluders);
 				light = light->shadows_next_ptr;
 			}
 
 			//VSG::canvas_render->reset_canvas();
+			RENDER_TIMESTAMP("<End rendering 2D Shadows");
 		}
 
-		VSG::rasterizer->restore_render_target();
-
 		if (scenario_draw_canvas_bg && canvas_map.front() && canvas_map.front()->key().get_layer() > scenario_canvas_max_layer) {
-			Ref<ARVRInterface> arvr_interface = ARVRServer::get_singleton()->get_primary_interface();
-
 			if (!can_draw_3d) {
-				VSG::scene->render_empty_scene(p_viewport->scenario, p_viewport->shadow_atlas);
-			} else if (p_viewport->use_arvr && arvr_interface.is_valid()) {
-				VSG::scene->render_camera(arvr_interface, p_eye, p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
+				VSG::scene->render_empty_scene(p_viewport->render_buffers, p_viewport->scenario, p_viewport->shadow_atlas);
 			} else {
-				VSG::scene->render_camera(p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
+				_draw_3d(p_viewport, p_eye);
 			}
 			scenario_draw_canvas_bg = false;
 		}
@@ -193,7 +247,7 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 
 			VisualServerCanvas::Canvas *canvas = static_cast<VisualServerCanvas::Canvas *>(E->get()->canvas);
 
-			Transform2D xform = p_viewport->global_transform * E->get()->transform;
+			Transform2D xform = _canvas_get_transform(p_viewport, canvas, E->get(), clip_rect.size);
 
 			RasterizerCanvas::Light *canvas_lights = NULL;
 
@@ -206,18 +260,14 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 				ptr = ptr->filter_next_ptr;
 			}
 
-			VSG::canvas->render_canvas(canvas, xform, canvas_lights, lights_with_mask, clip_rect);
+			VSG::canvas->render_canvas(p_viewport->render_target, canvas, xform, canvas_lights, lights_with_mask, clip_rect);
 			i++;
 
 			if (scenario_draw_canvas_bg && E->key().get_layer() >= scenario_canvas_max_layer) {
-				Ref<ARVRInterface> arvr_interface = ARVRServer::get_singleton()->get_primary_interface();
-
 				if (!can_draw_3d) {
-					VSG::scene->render_empty_scene(p_viewport->scenario, p_viewport->shadow_atlas);
-				} else if (p_viewport->use_arvr && arvr_interface.is_valid()) {
-					VSG::scene->render_camera(arvr_interface, p_eye, p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
+					VSG::scene->render_empty_scene(p_viewport->render_buffers, p_viewport->scenario, p_viewport->shadow_atlas);
 				} else {
-					VSG::scene->render_camera(p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
+					_draw_3d(p_viewport, p_eye);
 				}
 
 				scenario_draw_canvas_bg = false;
@@ -225,38 +275,47 @@ void VisualServerViewport::_draw_viewport(Viewport *p_viewport, ARVRInterface::E
 		}
 
 		if (scenario_draw_canvas_bg) {
-			Ref<ARVRInterface> arvr_interface = ARVRServer::get_singleton()->get_primary_interface();
-
 			if (!can_draw_3d) {
-				VSG::scene->render_empty_scene(p_viewport->scenario, p_viewport->shadow_atlas);
-			} else if (p_viewport->use_arvr && arvr_interface.is_valid()) {
-				VSG::scene->render_camera(arvr_interface, p_eye, p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
+				VSG::scene->render_empty_scene(p_viewport->render_buffers, p_viewport->scenario, p_viewport->shadow_atlas);
 			} else {
-				VSG::scene->render_camera(p_viewport->camera, p_viewport->scenario, p_viewport->size, p_viewport->shadow_atlas);
+				_draw_3d(p_viewport, p_eye);
 			}
-
-			scenario_draw_canvas_bg = false;
 		}
 
 		//VSG::canvas_render->canvas_debug_viewport_shadows(lights_with_shadow);
 	}
+
+	if (VSG::storage->render_target_is_clear_requested(p_viewport->render_target)) {
+		//was never cleared in the end, force clear it
+		VSG::storage->render_target_do_clear_request(p_viewport->render_target);
+	}
 }
 
 void VisualServerViewport::draw_viewports() {
-	// get our arvr interface in case we need it
-	Ref<ARVRInterface> arvr_interface = ARVRServer::get_singleton()->get_primary_interface();
 
-	// process all our active interfaces
-	ARVRServer::get_singleton()->_process();
+#if 0
+	// get our arvr interface in case we need it
+	Ref<ARVRInterface> arvr_interface;
+
+	if (ARVRServer::get_singleton() != NULL) {
+		arvr_interface = ARVRServer::get_singleton()->get_primary_interface();
+
+		// process all our active interfaces
+		ARVRServer::get_singleton()->_process();
+	}
+#endif
 
 	if (Engine::get_singleton()->is_editor_hint()) {
-		clear_color = GLOBAL_GET("rendering/environment/default_clear_color");
+		set_default_clear_color(GLOBAL_GET("rendering/environment/default_clear_color"));
 	}
 
 	//sort viewports
 	active_viewports.sort_custom<ViewportSort>();
 
+	Map<int, Vector<Rasterizer::BlitToScreen> > blit_to_screen_list;
 	//draw viewports
+	RENDER_TIMESTAMP(">Render Viewports");
+
 	for (int i = 0; i < active_viewports.size(); i++) {
 
 		Viewport *vp = active_viewports[i];
@@ -264,7 +323,10 @@ void VisualServerViewport::draw_viewports() {
 		if (vp->update_mode == VS::VIEWPORT_UPDATE_DISABLED)
 			continue;
 
-		ERR_CONTINUE(!vp->render_target.is_valid());
+		if (!vp->render_target.is_valid()) {
+			continue;
+		}
+		//ERR_CONTINUE(!vp->render_target.is_valid());
 
 		bool visible = vp->viewport_to_screen_rect != Rect2() || vp->update_mode == VS::VIEWPORT_UPDATE_ALWAYS || vp->update_mode == VS::VIEWPORT_UPDATE_ONCE || (vp->update_mode == VS::VIEWPORT_UPDATE_WHEN_VISIBLE && VSG::storage->render_target_was_used(vp->render_target));
 		visible = visible && vp->size.x > 1 && vp->size.y > 1;
@@ -272,21 +334,33 @@ void VisualServerViewport::draw_viewports() {
 		if (!visible)
 			continue;
 
-		VSG::storage->render_target_clear_used(vp->render_target);
+		RENDER_TIMESTAMP(">Rendering Viewport " + itos(i));
 
+		VSG::storage->render_target_set_as_unused(vp->render_target);
+#if 0
 		if (vp->use_arvr && arvr_interface.is_valid()) {
 			// override our size, make sure it matches our required size
-			Size2 size = arvr_interface->get_render_targetsize();
-			VSG::storage->render_target_set_size(vp->render_target, size.x, size.y);
+			vp->size = arvr_interface->get_render_targetsize();
+			VSG::storage->render_target_set_size(vp->render_target, vp->size.x, vp->size.y);
 
 			// render mono or left eye first
 			ARVRInterface::Eyes leftOrMono = arvr_interface->is_stereo() ? ARVRInterface::EYE_LEFT : ARVRInterface::EYE_MONO;
+
+			// check for an external texture destination for our left eye/mono
+			VSG::storage->render_target_set_external_texture(vp->render_target, arvr_interface->get_external_texture_for_eye(leftOrMono));
+
+			// set our render target as current
 			VSG::rasterizer->set_current_render_target(vp->render_target);
+
+			// and draw left eye/mono
 			_draw_viewport(vp, leftOrMono);
 			arvr_interface->commit_for_eye(leftOrMono, vp->render_target, vp->viewport_to_screen_rect);
 
 			// render right eye
 			if (leftOrMono == ARVRInterface::EYE_LEFT) {
+				// check for an external texture destination for our right eye
+				VSG::storage->render_target_set_external_texture(vp->render_target, arvr_interface->get_external_texture_for_eye(ARVRInterface::EYE_RIGHT));
+
 				// commit for eye may have changed the render target
 				VSG::rasterizer->set_current_render_target(vp->render_target);
 
@@ -297,7 +371,9 @@ void VisualServerViewport::draw_viewports() {
 			// and for our frame timing, mark when we've finished committing our eyes
 			ARVRServer::get_singleton()->_mark_commit();
 		} else {
-			VSG::rasterizer->set_current_render_target(vp->render_target);
+#endif
+		{
+			VSG::storage->render_target_set_external_texture(vp->render_target, 0);
 
 			VSG::scene_render->set_debug_draw_mode(vp->debug_draw);
 			VSG::storage->render_info_begin_capture();
@@ -313,17 +389,34 @@ void VisualServerViewport::draw_viewports() {
 			vp->render_info[VS::VIEWPORT_RENDER_INFO_SURFACE_CHANGES_IN_FRAME] = VSG::storage->get_captured_render_info(VS::INFO_SURFACE_CHANGES_IN_FRAME);
 			vp->render_info[VS::VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME] = VSG::storage->get_captured_render_info(VS::INFO_DRAW_CALLS_IN_FRAME);
 
-			if (vp->viewport_to_screen_rect != Rect2()) {
+			if (vp->viewport_to_screen_rect != Rect2() && (!vp->viewport_render_direct_to_screen || !VSG::rasterizer->is_low_end())) {
 				//copy to screen if set as such
-				VSG::rasterizer->set_current_render_target(RID());
-				VSG::rasterizer->blit_render_target_to_screen(vp->render_target, vp->viewport_to_screen_rect, vp->viewport_to_screen);
+				Rasterizer::BlitToScreen blit;
+				blit.render_target = vp->render_target;
+				blit.rect = vp->viewport_to_screen_rect;
+
+				if (!blit_to_screen_list.has(vp->viewport_to_screen)) {
+					blit_to_screen_list[vp->viewport_to_screen] = Vector<Rasterizer::BlitToScreen>();
+				}
+
+				blit_to_screen_list[vp->viewport_to_screen].push_back(blit);
 			}
 		}
 
 		if (vp->update_mode == VS::VIEWPORT_UPDATE_ONCE) {
 			vp->update_mode = VS::VIEWPORT_UPDATE_DISABLED;
 		}
-		VSG::scene_render->set_debug_draw_mode(VS::VIEWPORT_DEBUG_DRAW_DISABLED);
+
+		RENDER_TIMESTAMP("<Rendering Viewport " + itos(i));
+	}
+	VSG::scene_render->set_debug_draw_mode(VS::VIEWPORT_DEBUG_DRAW_DISABLED);
+
+	RENDER_TIMESTAMP("<Render Viewports");
+	//this needs to be called to make screen swapping more efficient
+	VSG::rasterizer->prepare_for_blitting_render_targets();
+
+	for (Map<int, Vector<Rasterizer::BlitToScreen> >::Element *E = blit_to_screen_list.front(); E; E = E->next()) {
+		VSG::rasterizer->blit_render_targets_to_screen(E->key(), E->get().ptr(), E->get().size());
 	}
 }
 
@@ -338,6 +431,7 @@ RID VisualServerViewport::viewport_create() {
 	viewport->hide_canvas = false;
 	viewport->render_target = VSG::storage->render_target_create();
 	viewport->shadow_atlas = VSG::scene_render->shadow_atlas_create();
+	viewport->viewport_render_direct_to_screen = false;
 
 	return rid;
 }
@@ -356,8 +450,14 @@ void VisualServerViewport::viewport_set_size(RID p_viewport, int p_width, int p_
 	Viewport *viewport = viewport_owner.getornull(p_viewport);
 	ERR_FAIL_COND(!viewport);
 
+	//	if (viewport->size.width == p_width && viewport->size.height == p_height) {
+	//		return; //nothing to do
+	//	}
 	viewport->size = Size2(p_width, p_height);
 	VSG::storage->render_target_set_size(viewport->render_target, p_width, p_height);
+	if (viewport->render_buffers.is_valid()) {
+		VSG::scene_render->render_buffers_configure(viewport->render_buffers, viewport->render_target, viewport->size.width, viewport->size.height, viewport->msaa);
+	}
 }
 
 void VisualServerViewport::viewport_set_active(RID p_viewport, bool p_active) {
@@ -394,13 +494,54 @@ void VisualServerViewport::viewport_attach_to_screen(RID p_viewport, const Rect2
 	Viewport *viewport = viewport_owner.getornull(p_viewport);
 	ERR_FAIL_COND(!viewport);
 
+	// If using GLES2 we can optimize this operation by rendering directly to system_fbo
+	// instead of rendering to fbo and copying to system_fbo after
+	if (VSG::rasterizer->is_low_end() && viewport->viewport_render_direct_to_screen) {
+
+		VSG::storage->render_target_set_size(viewport->render_target, p_rect.size.x, p_rect.size.y);
+		VSG::storage->render_target_set_position(viewport->render_target, p_rect.position.x, p_rect.position.y);
+	}
+
 	viewport->viewport_to_screen_rect = p_rect;
 	viewport->viewport_to_screen = p_screen;
 }
+
+void VisualServerViewport::viewport_set_render_direct_to_screen(RID p_viewport, bool p_enable) {
+	Viewport *viewport = viewport_owner.getornull(p_viewport);
+	ERR_FAIL_COND(!viewport);
+
+	if (p_enable == viewport->viewport_render_direct_to_screen)
+		return;
+
+	// if disabled, reset render_target size and position
+	if (!p_enable) {
+
+		VSG::storage->render_target_set_position(viewport->render_target, 0, 0);
+		VSG::storage->render_target_set_size(viewport->render_target, viewport->size.x, viewport->size.y);
+	}
+
+	VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_DIRECT_TO_SCREEN, p_enable);
+	viewport->viewport_render_direct_to_screen = p_enable;
+
+	// if attached to screen already, setup screen size and position, this needs to happen after setting flag to avoid an unnecessary buffer allocation
+	if (VSG::rasterizer->is_low_end() && viewport->viewport_to_screen_rect != Rect2() && p_enable) {
+
+		VSG::storage->render_target_set_size(viewport->render_target, viewport->viewport_to_screen_rect.size.x, viewport->viewport_to_screen_rect.size.y);
+		VSG::storage->render_target_set_position(viewport->render_target, viewport->viewport_to_screen_rect.position.x, viewport->viewport_to_screen_rect.position.y);
+	}
+}
+
 void VisualServerViewport::viewport_detach(RID p_viewport) {
 
 	Viewport *viewport = viewport_owner.getornull(p_viewport);
 	ERR_FAIL_COND(!viewport);
+
+	// if render_direct_to_screen was used, reset size and position
+	if (VSG::rasterizer->is_low_end() && viewport->viewport_render_direct_to_screen) {
+
+		VSG::storage->render_target_set_position(viewport->render_target, 0, 0);
+		VSG::storage->render_target_set_size(viewport->render_target, viewport->size.x, viewport->size.y);
+	}
 
 	viewport->viewport_to_screen_rect = Rect2();
 	viewport->viewport_to_screen = 0;
@@ -412,13 +553,6 @@ void VisualServerViewport::viewport_set_update_mode(RID p_viewport, VS::Viewport
 	ERR_FAIL_COND(!viewport);
 
 	viewport->update_mode = p_mode;
-}
-void VisualServerViewport::viewport_set_vflip(RID p_viewport, bool p_enable) {
-
-	Viewport *viewport = viewport_owner.getornull(p_viewport);
-	ERR_FAIL_COND(!viewport);
-
-	VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_VFLIP, p_enable);
 }
 
 RID VisualServerViewport::viewport_get_texture(RID p_viewport) const {
@@ -449,25 +583,6 @@ void VisualServerViewport::viewport_set_disable_environment(RID p_viewport, bool
 	ERR_FAIL_COND(!viewport);
 
 	viewport->disable_environment = p_disable;
-}
-
-void VisualServerViewport::viewport_set_disable_3d(RID p_viewport, bool p_disable) {
-
-	Viewport *viewport = viewport_owner.getornull(p_viewport);
-	ERR_FAIL_COND(!viewport);
-
-	viewport->disable_3d = p_disable;
-	//VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_3D, p_disable);
-	//this should be just for disabling rendering of 3D, to actually disable it, set usage
-}
-
-void VisualServerViewport::viewport_set_keep_3d_linear(RID p_viewport, bool p_keep_3d_linear) {
-
-	Viewport *viewport = viewport_owner.getornull(p_viewport);
-	ERR_FAIL_COND(!viewport);
-
-	viewport->keep_3d_linear = p_keep_3d_linear;
-	VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_KEEP_3D_LINEAR, p_keep_3d_linear);
 }
 
 void VisualServerViewport::viewport_attach_camera(RID p_viewport, RID p_camera) {
@@ -568,52 +683,12 @@ void VisualServerViewport::viewport_set_msaa(RID p_viewport, VS::ViewportMSAA p_
 	Viewport *viewport = viewport_owner.getornull(p_viewport);
 	ERR_FAIL_COND(!viewport);
 
-	VSG::storage->render_target_set_msaa(viewport->render_target, p_msaa);
-}
-
-void VisualServerViewport::viewport_set_hdr(RID p_viewport, bool p_enabled) {
-
-	Viewport *viewport = viewport_owner.getornull(p_viewport);
-	ERR_FAIL_COND(!viewport);
-
-	VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_HDR, p_enabled);
-}
-
-void VisualServerViewport::viewport_set_usage(RID p_viewport, VS::ViewportUsage p_usage) {
-
-	Viewport *viewport = viewport_owner.getornull(p_viewport);
-	ERR_FAIL_COND(!viewport);
-
-	switch (p_usage) {
-		case VS::VIEWPORT_USAGE_2D: {
-
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_3D, true);
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_3D_EFFECTS, true);
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_SAMPLING, false);
-
-			viewport->disable_3d_by_usage = true;
-		} break;
-		case VS::VIEWPORT_USAGE_2D_NO_SAMPLING: {
-
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_3D, true);
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_3D_EFFECTS, true);
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_SAMPLING, true);
-			viewport->disable_3d_by_usage = true;
-		} break;
-		case VS::VIEWPORT_USAGE_3D: {
-
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_3D, false);
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_3D_EFFECTS, false);
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_SAMPLING, false);
-			viewport->disable_3d_by_usage = false;
-		} break;
-		case VS::VIEWPORT_USAGE_3D_NO_EFFECTS: {
-
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_3D, false);
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_3D_EFFECTS, true);
-			VSG::storage->render_target_set_flag(viewport->render_target, RasterizerStorage::RENDER_TARGET_NO_SAMPLING, false);
-			viewport->disable_3d_by_usage = false;
-		} break;
+	if (viewport->msaa == p_msaa) {
+		return;
+	}
+	viewport->msaa = p_msaa;
+	if (viewport->render_buffers.is_valid()) {
+		VSG::scene_render->render_buffers_configure(viewport->render_buffers, viewport->render_target, viewport->size.width, viewport->size.height, p_msaa);
 	}
 }
 
@@ -644,6 +719,9 @@ bool VisualServerViewport::free(RID p_rid) {
 
 		VSG::storage->free(viewport->render_target);
 		VSG::scene_render->free(viewport->shadow_atlas);
+		if (viewport->render_buffers.is_valid()) {
+			VSG::scene_render->free(viewport->render_buffers);
+		}
 
 		while (viewport->canvas_map.front()) {
 			viewport_remove_canvas(p_rid, viewport->canvas_map.front()->key());
@@ -662,7 +740,7 @@ bool VisualServerViewport::free(RID p_rid) {
 }
 
 void VisualServerViewport::set_default_clear_color(const Color &p_color) {
-	clear_color = p_color;
+	VSG::storage->set_default_clear_color(p_color);
 }
 
 VisualServerViewport::VisualServerViewport() {

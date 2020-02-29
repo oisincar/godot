@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,6 +32,8 @@
 #include "gdnative_library_editor_plugin.h"
 #include "gdnative.h"
 
+#include "editor/editor_scale.h"
+
 void GDNativeLibraryEditor::edit(Ref<GDNativeLibrary> p_library) {
 	library = p_library;
 	Ref<ConfigFile> config = p_library->get_config_file();
@@ -51,14 +53,6 @@ void GDNativeLibraryEditor::edit(Ref<GDNativeLibrary> p_library) {
 }
 
 void GDNativeLibraryEditor::_bind_methods() {
-
-	ClassDB::bind_method("_on_item_button", &GDNativeLibraryEditor::_on_item_button);
-	ClassDB::bind_method("_on_library_selected", &GDNativeLibraryEditor::_on_library_selected);
-	ClassDB::bind_method("_on_dependencies_selected", &GDNativeLibraryEditor::_on_dependencies_selected);
-	ClassDB::bind_method("_on_filter_selected", &GDNativeLibraryEditor::_on_filter_selected);
-	ClassDB::bind_method("_on_item_collapsed", &GDNativeLibraryEditor::_on_item_collapsed);
-	ClassDB::bind_method("_on_item_activated", &GDNativeLibraryEditor::_on_item_activated);
-	ClassDB::bind_method("_on_create_new_entry", &GDNativeLibraryEditor::_on_create_new_entry);
 }
 
 void GDNativeLibraryEditor::_update_tree() {
@@ -66,10 +60,18 @@ void GDNativeLibraryEditor::_update_tree() {
 	tree->clear();
 	TreeItem *root = tree->create_item();
 
-	for (Map<String, NativePlatformConfig>::Element *E = platforms.front(); E; E = E->next()) {
+	PopupMenu *filter_list = filter->get_popup();
+	String text = "";
+	for (int i = 0; i < filter_list->get_item_count(); i++) {
 
-		if (showing_platform != E->key() && showing_platform != "All")
+		if (!filter_list->is_item_checked(i)) {
 			continue;
+		}
+		Map<String, NativePlatformConfig>::Element *E = platforms.find(filter_list->get_item_metadata(i));
+		if (!text.empty()) {
+			text += ", ";
+		}
+		text += E->get().name;
 
 		TreeItem *platform = tree->create_item(root);
 		platform->set_text(0, E->get().name);
@@ -119,6 +121,7 @@ void GDNativeLibraryEditor::_update_tree() {
 
 		platform->set_collapsed(collapsed_items.find(E->get().name) != NULL);
 	}
+	filter->set_text(text);
 }
 
 void GDNativeLibraryEditor::_on_item_button(Object *item, int column, int id) {
@@ -157,14 +160,15 @@ void GDNativeLibraryEditor::_on_library_selected(const String &file) {
 	_set_target_value(file_dialog->get_meta("section"), file_dialog->get_meta("target"), file);
 }
 
-void GDNativeLibraryEditor::_on_dependencies_selected(const PoolStringArray &files) {
+void GDNativeLibraryEditor::_on_dependencies_selected(const PackedStringArray &files) {
 
 	_set_target_value(file_dialog->get_meta("section"), file_dialog->get_meta("target"), files);
 }
 
-void GDNativeLibraryEditor::_on_filter_selected(int id) {
+void GDNativeLibraryEditor::_on_filter_selected(int index) {
 
-	showing_platform = filter->get_item_metadata(id);
+	PopupMenu *filter_list = filter->get_popup();
+	filter_list->set_item_checked(index, !filter_list->is_item_checked(index));
 	_update_tree();
 }
 
@@ -214,7 +218,6 @@ void GDNativeLibraryEditor::_erase_entry(const String &platform, const String &e
 		if (List<String>::Element *E = platforms[platform].entries.find(entry)) {
 
 			String target = platform + "." + entry;
-			Ref<ConfigFile> config = library->get_config_file();
 
 			platforms[platform].entries.erase(E);
 			_set_target_value("entry", target, "");
@@ -264,8 +267,6 @@ void GDNativeLibraryEditor::_translate_to_config_file() {
 }
 
 GDNativeLibraryEditor::GDNativeLibraryEditor() {
-
-	showing_platform = "All";
 
 	{ // Define platforms
 		NativePlatformConfig platform_windows;
@@ -336,20 +337,21 @@ GDNativeLibraryEditor::GDNativeLibraryEditor() {
 	Label *label = memnew(Label);
 	label->set_text(TTR("Platform:"));
 	hbox->add_child(label);
-	filter = memnew(OptionButton);
-	hbox->add_child(filter);
+	filter = memnew(MenuButton);
 	filter->set_h_size_flags(SIZE_EXPAND_FILL);
+	filter->set_text_align(filter->ALIGN_LEFT);
+	hbox->add_child(filter);
+	PopupMenu *filter_list = filter->get_popup();
+	filter_list->set_hide_on_checkable_item_selection(false);
 
 	int idx = 0;
-	filter->add_item(TTR("All"), idx);
-	filter->set_item_metadata(idx, "All");
-	idx += 1;
 	for (Map<String, NativePlatformConfig>::Element *E = platforms.front(); E; E = E->next()) {
-		filter->add_item(E->get().name, idx);
-		filter->set_item_metadata(idx, E->key());
+		filter_list->add_check_item(E->get().name, idx);
+		filter_list->set_item_metadata(idx, E->key());
+		filter_list->set_item_checked(idx, true);
 		idx += 1;
 	}
-	filter->connect("item_selected", this, "_on_filter_selected");
+	filter_list->connect("index_pressed", callable_mp(this, &GDNativeLibraryEditor::_on_filter_selected));
 
 	tree = memnew(Tree);
 	container->add_child(tree);
@@ -364,16 +366,16 @@ GDNativeLibraryEditor::GDNativeLibraryEditor() {
 	tree->set_column_title(2, TTR("Dependencies"));
 	tree->set_column_expand(3, false);
 	tree->set_column_min_width(3, int(110 * EDSCALE));
-	tree->connect("button_pressed", this, "_on_item_button");
-	tree->connect("item_collapsed", this, "_on_item_collapsed");
-	tree->connect("item_activated", this, "_on_item_activated");
+	tree->connect("button_pressed", callable_mp(this, &GDNativeLibraryEditor::_on_item_button));
+	tree->connect("item_collapsed", callable_mp(this, &GDNativeLibraryEditor::_on_item_collapsed));
+	tree->connect("item_activated", callable_mp(this, &GDNativeLibraryEditor::_on_item_activated));
 
 	file_dialog = memnew(EditorFileDialog);
 	file_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
 	file_dialog->set_resizable(true);
 	add_child(file_dialog);
-	file_dialog->connect("file_selected", this, "_on_library_selected");
-	file_dialog->connect("files_selected", this, "_on_dependencies_selected");
+	file_dialog->connect("file_selected", callable_mp(this, &GDNativeLibraryEditor::_on_library_selected));
+	file_dialog->connect("files_selected", callable_mp(this, &GDNativeLibraryEditor::_on_dependencies_selected));
 
 	new_architecture_dialog = memnew(ConfirmationDialog);
 	add_child(new_architecture_dialog);
@@ -382,16 +384,14 @@ GDNativeLibraryEditor::GDNativeLibraryEditor() {
 	new_architecture_dialog->add_child(new_architecture_input);
 	new_architecture_dialog->set_custom_minimum_size(Vector2(300, 80) * EDSCALE);
 	new_architecture_input->set_anchors_and_margins_preset(PRESET_HCENTER_WIDE, PRESET_MODE_MINSIZE, 5 * EDSCALE);
-	new_architecture_dialog->get_ok()->connect("pressed", this, "_on_create_new_entry");
+	new_architecture_dialog->get_ok()->connect("pressed", callable_mp(this, &GDNativeLibraryEditor::_on_create_new_entry));
 }
 
 void GDNativeLibraryEditorPlugin::edit(Object *p_node) {
 
-	if (Object::cast_to<GDNativeLibrary>(p_node)) {
-		library_editor->edit(Object::cast_to<GDNativeLibrary>(p_node));
-		library_editor->show();
-	} else
-		library_editor->hide();
+	Ref<GDNativeLibrary> new_library = Object::cast_to<GDNativeLibrary>(p_node);
+	if (new_library.is_valid())
+		library_editor->edit(new_library);
 }
 
 bool GDNativeLibraryEditorPlugin::handles(Object *p_node) const {

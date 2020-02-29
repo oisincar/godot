@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -98,7 +98,7 @@ RID Shader::get_rid() const {
 	return shader;
 }
 
-void Shader::set_default_texture_param(const StringName &p_param, const Ref<Texture> &p_texture) {
+void Shader::set_default_texture_param(const StringName &p_param, const Ref<Texture2D> &p_texture) {
 
 	if (p_texture.is_valid()) {
 		default_textures[p_param] = p_texture;
@@ -111,17 +111,17 @@ void Shader::set_default_texture_param(const StringName &p_param, const Ref<Text
 	emit_changed();
 }
 
-Ref<Texture> Shader::get_default_texture_param(const StringName &p_param) const {
+Ref<Texture2D> Shader::get_default_texture_param(const StringName &p_param) const {
 
 	if (default_textures.has(p_param))
 		return default_textures[p_param];
 	else
-		return Ref<Texture>();
+		return Ref<Texture2D>();
 }
 
 void Shader::get_default_texture_param_list(List<StringName> *r_textures) const {
 
-	for (const Map<StringName, Ref<Texture> >::Element *E = default_textures.front(); E; E = E->next()) {
+	for (const Map<StringName, Ref<Texture2D> >::Element *E = default_textures.front(); E; E = E->next()) {
 
 		r_textures->push_back(E->key());
 	}
@@ -173,7 +173,7 @@ Shader::~Shader() {
 }
 ////////////
 
-RES ResourceFormatLoaderShader::load(const String &p_path, const String &p_original_path, Error *r_error) {
+RES ResourceFormatLoaderShader::load(const String &p_path, const String &p_original_path, Error *r_error, bool p_use_sub_threads, float *r_progress) {
 
 	if (r_error)
 		*r_error = ERR_FILE_CANT_OPEN;
@@ -222,10 +222,7 @@ Error ResourceFormatSaverShader::save(const String &p_path, const RES &p_resourc
 	Error err;
 	FileAccess *file = FileAccess::open(p_path, FileAccess::WRITE, &err);
 
-	if (err) {
-
-		ERR_FAIL_COND_V(err, err);
-	}
+	ERR_FAIL_COND_V_MSG(err, err, "Cannot save shader '" + p_path + "'.");
 
 	file->store_string(source);
 	if (file->get_error() != OK && file->get_error() != ERR_FILE_EOF) {

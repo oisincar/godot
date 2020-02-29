@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -81,7 +81,7 @@ public:
 		Vector<Vector3> vts;
 
 		/*
-		PoolVector<Plane> sp = Geometry::build_sphere_planes(2,5,5);
+		Vector<Plane> sp = Geometry::build_sphere_planes(2,5,5);
 		Geometry::MeshData md2 = Geometry::build_convex_mesh(sp);
 		vts=md2.vertices;
 */

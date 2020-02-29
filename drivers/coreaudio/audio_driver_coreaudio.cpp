@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -69,8 +69,6 @@ OSStatus AudioDriverCoreAudio::output_device_address_cb(AudioObjectID inObjectID
 #endif
 
 Error AudioDriverCoreAudio::init() {
-	mutex = Mutex::create();
-
 	AudioComponentDescription desc;
 	zeromem(&desc, sizeof(desc));
 	desc.componentType = kAudioUnitType_Output;
@@ -159,7 +157,10 @@ Error AudioDriverCoreAudio::init() {
 	result = AudioUnitInitialize(audio_unit);
 	ERR_FAIL_COND_V(result != noErr, FAILED);
 
-	return capture_init();
+	if (GLOBAL_GET("audio/enable_audio_input")) {
+		return capture_init();
+	}
+	return OK;
 }
 
 OSStatus AudioDriverCoreAudio::output_callback(void *inRefCon,
@@ -183,15 +184,15 @@ OSStatus AudioDriverCoreAudio::output_callback(void *inRefCon,
 	for (unsigned int i = 0; i < ioData->mNumberBuffers; i++) {
 
 		AudioBuffer *abuf = &ioData->mBuffers[i];
-		int frames_left = inNumberFrames;
+		unsigned int frames_left = inNumberFrames;
 		int16_t *out = (int16_t *)abuf->mData;
 
 		while (frames_left) {
 
-			int frames = MIN(frames_left, ad->buffer_frames);
+			unsigned int frames = MIN(frames_left, ad->buffer_frames);
 			ad->audio_server_process(frames, ad->samples_in.ptrw());
 
-			for (int j = 0; j < frames * ad->channels; j++) {
+			for (unsigned int j = 0; j < frames * ad->channels; j++) {
 
 				out[j] = ad->samples_in[j] >> 16;
 			}
@@ -228,7 +229,7 @@ OSStatus AudioDriverCoreAudio::input_callback(void *inRefCon,
 
 	OSStatus result = AudioUnitRender(ad->input_unit, ioActionFlags, inTimeStamp, inBusNumber, inNumberFrames, &bufferList);
 	if (result == noErr) {
-		for (int i = 0; i < inNumberFrames * ad->capture_channels; i++) {
+		for (unsigned int i = 0; i < inNumberFrames * ad->capture_channels; i++) {
 			int32_t sample = ad->input_buf[i] << 16;
 			ad->input_buffer_write(sample);
 
@@ -238,7 +239,7 @@ OSStatus AudioDriverCoreAudio::input_callback(void *inRefCon,
 			}
 		}
 	} else {
-		ERR_PRINTS("AudioUnitRender failed, code: " + itos(result));
+		ERR_PRINT("AudioUnitRender failed, code: " + itos(result));
 	}
 
 	ad->unlock();
@@ -250,7 +251,7 @@ void AudioDriverCoreAudio::start() {
 	if (!active) {
 		OSStatus result = AudioOutputUnitStart(audio_unit);
 		if (result != noErr) {
-			ERR_PRINTS("AudioOutputUnitStart failed, code: " + itos(result));
+			ERR_PRINT("AudioOutputUnitStart failed, code: " + itos(result));
 		} else {
 			active = true;
 		}
@@ -261,7 +262,7 @@ void AudioDriverCoreAudio::stop() {
 	if (active) {
 		OSStatus result = AudioOutputUnitStop(audio_unit);
 		if (result != noErr) {
-			ERR_PRINTS("AudioOutputUnitStop failed, code: " + itos(result));
+			ERR_PRINT("AudioOutputUnitStop failed, code: " + itos(result));
 		} else {
 			active = false;
 		}
@@ -277,19 +278,15 @@ AudioDriver::SpeakerMode AudioDriverCoreAudio::get_speaker_mode() const {
 };
 
 void AudioDriverCoreAudio::lock() {
-	if (mutex)
-		mutex->lock();
+	mutex.lock();
 };
 
 void AudioDriverCoreAudio::unlock() {
-	if (mutex)
-		mutex->unlock();
+	mutex.unlock();
 };
 
 bool AudioDriverCoreAudio::try_lock() {
-	if (mutex)
-		return mutex->try_lock() == OK;
-	return true;
+	return mutex.try_lock() == OK;
 }
 
 void AudioDriverCoreAudio::finish() {
@@ -340,11 +337,6 @@ void AudioDriverCoreAudio::finish() {
 
 		audio_unit = NULL;
 		unlock();
-	}
-
-	if (mutex) {
-		memdelete(mutex);
-		mutex = NULL;
 	}
 }
 
@@ -488,7 +480,7 @@ Error AudioDriverCoreAudio::capture_start() {
 
 	OSStatus result = AudioOutputUnitStart(input_unit);
 	if (result != noErr) {
-		ERR_PRINTS("AudioOutputUnitStart failed, code: " + itos(result));
+		ERR_PRINT("AudioOutputUnitStart failed, code: " + itos(result));
 	}
 
 	return OK;
@@ -499,7 +491,7 @@ Error AudioDriverCoreAudio::capture_stop() {
 	if (input_unit) {
 		OSStatus result = AudioOutputUnitStop(input_unit);
 		if (result != noErr) {
-			ERR_PRINTS("AudioOutputUnitStop failed, code: " + itos(result));
+			ERR_PRINT("AudioOutputUnitStop failed, code: " + itos(result));
 		}
 	}
 
@@ -684,22 +676,17 @@ String AudioDriverCoreAudio::capture_get_device() {
 
 #endif
 
-AudioDriverCoreAudio::AudioDriverCoreAudio() {
-	audio_unit = NULL;
-	input_unit = NULL;
-	active = false;
-	mutex = NULL;
-
-	mix_rate = 0;
-	channels = 2;
-	capture_channels = 2;
-
-	buffer_frames = 0;
-
+AudioDriverCoreAudio::AudioDriverCoreAudio() :
+		audio_unit(NULL),
+		input_unit(NULL),
+		active(false),
+		device_name("Default"),
+		capture_device_name("Default"),
+		mix_rate(0),
+		channels(2),
+		capture_channels(2),
+		buffer_frames(0) {
 	samples_in.clear();
-
-	device_name = "Default";
-	capture_device_name = "Default";
 }
 
 AudioDriverCoreAudio::~AudioDriverCoreAudio(){};

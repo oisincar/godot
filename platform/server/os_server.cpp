@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,10 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "os_server.h"
 
 #include "core/print_string.h"
-#include "drivers/dummy/audio_driver_dummy.h"
 #include "drivers/dummy/rasterizer_dummy.h"
 #include "drivers/dummy/texture_loader_dummy.h"
 #include "servers/visual/visual_server_raster.h"
@@ -91,15 +91,9 @@ Error OS_Server::initialize(const VideoMode &p_desired, int p_video_driver, int 
 
 	input = memnew(InputDefault);
 
-#ifdef __APPLE__
-	power_manager = memnew(power_osx);
-#else
-	power_manager = memnew(PowerX11);
-#endif
-
 	_ensure_user_data_dir();
 
-	resource_loader_dummy = memnew(ResourceFormatDummyTexture);
+	resource_loader_dummy.instance();
 	ResourceLoader::add_resource_format_loader(resource_loader_dummy);
 
 	return OK;
@@ -116,9 +110,8 @@ void OS_Server::finalize() {
 
 	memdelete(input);
 
-	memdelete(power_manager);
-
-	memdelete(resource_loader_dummy);
+	ResourceLoader::remove_resource_format_loader(resource_loader_dummy);
+	resource_loader_dummy.unref();
 
 	args.clear();
 }
@@ -188,30 +181,12 @@ bool OS_Server::can_draw() const {
 	return false; //can never draw
 };
 
-String OS_Server::get_name() {
+String OS_Server::get_name() const {
 
 	return "Server";
 }
 
 void OS_Server::move_window_to_foreground() {
-}
-
-void OS_Server::set_cursor_shape(CursorShape p_shape) {
-}
-
-void OS_Server::set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot) {
-}
-
-OS::PowerState OS_Server::get_power_state() {
-	return power_manager->get_power_state();
-}
-
-int OS_Server::get_power_seconds_left() {
-	return power_manager->get_power_seconds_left();
-}
-
-int OS_Server::get_power_percent_left() {
-	return power_manager->get_power_percent_left();
 }
 
 bool OS_Server::_check_internal_feature_support(const String &p_feature) {

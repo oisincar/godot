@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -31,28 +31,32 @@
 #ifndef OS_X11_H
 #define OS_X11_H
 
-#include "context_gl_x11.h"
 #include "core/os/input.h"
 #include "crash_handler_x11.h"
 #include "drivers/alsa/audio_driver_alsa.h"
-#include "drivers/alsamidi/alsa_midi.h"
+#include "drivers/alsamidi/midi_driver_alsamidi.h"
 #include "drivers/pulseaudio/audio_driver_pulseaudio.h"
 #include "drivers/unix/os_unix.h"
 #include "joypad_linux.h"
 #include "main/input_default.h"
-#include "power_x11.h"
 #include "servers/audio_server.h"
 #include "servers/visual/rasterizer.h"
 #include "servers/visual_server.h"
-//#include "servers/visual/visual_server_wrap_mt.h"
+
+#if defined(OPENGL_ENABLED)
+#include "context_gl_x11.h"
+#endif
+
+#if defined(VULKAN_ENABLED)
+#include "drivers/vulkan/rendering_device_vulkan.h"
+#include "platform/x11/vulkan_context_x11.h"
+#endif
 
 #include <X11/Xcursor/Xcursor.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/XInput2.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/keysym.h>
-#ifdef TOUCH_ENABLED
-#include <X11/extensions/XInput2.h>
-#endif
 
 // Hints for X11 fullscreen
 typedef struct {
@@ -78,9 +82,6 @@ typedef struct _xrr_monitor_info {
 } xrr_monitor_info;
 
 #undef CursorShape
-/**
-	@author Juan Linietsky <reduzio@gmail.com>
-*/
 
 class OS_X11 : public OS_Unix {
 
@@ -97,8 +98,13 @@ class OS_X11 : public OS_Unix {
 	int xdnd_version;
 
 #if defined(OPENGL_ENABLED)
-	ContextGL_X11 *context_gl;
+	ContextGL_X11 *context_gles2;
 #endif
+#if defined(VULKAN_ENABLED)
+	VulkanContextX11 *context_vulkan;
+	RenderingDeviceVulkan *rendering_device_vulkan;
+#endif
+
 	//Rasterizer *rasterizer;
 	VisualServer *visual_server;
 	VideoMode current_videomode;
@@ -120,24 +126,40 @@ class OS_X11 : public OS_Unix {
 	// IME
 	bool im_active;
 	Vector2 im_position;
+	Vector2 last_position_before_fs;
 
-	Point2i last_mouse_pos;
+	Size2 min_size;
+	Size2 max_size;
+
+	Point2 last_mouse_pos;
 	bool last_mouse_pos_valid;
 	Point2i last_click_pos;
 	uint64_t last_click_ms;
+	int last_click_button_index;
 	uint32_t last_button_state;
-#ifdef TOUCH_ENABLED
+
 	struct {
 		int opcode;
-		Vector<int> devices;
-		XIEventMask event_mask;
+		Vector<int> touch_devices;
+		Map<int, Vector2> absolute_devices;
+		Map<int, Vector3> pen_devices;
+		XIEventMask all_event_mask;
+		XIEventMask all_master_event_mask;
 		Map<int, Vector2> state;
+		double pressure;
+		Vector2 tilt;
 		Vector2 mouse_pos_to_filter;
-	} touch;
-#endif
+		Vector2 relative_motion;
+		Vector2 raw_pos;
+		Vector2 old_raw_pos;
+		::Time last_relative_time;
+	} xi;
 
-	unsigned int get_mouse_button_state(unsigned int p_x11_state);
+	bool refresh_device_info();
+
+	unsigned int get_mouse_button_state(unsigned int p_x11_button, int p_x11_type);
 	void get_key_modifier_state(unsigned int p_x11_state, Ref<InputEventWithModifiers> state);
+	void flush_mouse_motion();
 
 	MouseMode mouse_mode;
 	Point2i center;
@@ -157,6 +179,7 @@ class OS_X11 : public OS_Unix {
 	Cursor cursors[CURSOR_MAX];
 	Cursor null_cursor;
 	CursorShape current_cursor;
+	Map<CursorShape, Vector<Variant> > cursors_cache;
 
 	InputDefault *input;
 
@@ -176,14 +199,13 @@ class OS_X11 : public OS_Unix {
 	AudioDriverPulseAudio driver_pulseaudio;
 #endif
 
-	PowerX11 *power_manager;
-
 	bool layered_window;
 
 	CrashHandler crash_handler;
 
 	int video_driver_index;
 	bool maximized;
+	bool window_focused;
 	//void set_wm_border(bool p_enabled);
 	void set_wm_fullscreen(bool p_enabled);
 	void set_wm_above(bool p_enabled);
@@ -209,9 +231,10 @@ protected:
 	bool is_window_maximize_allowed();
 
 public:
-	virtual String get_name();
+	virtual String get_name() const;
 
 	virtual void set_cursor_shape(CursorShape p_shape);
+	virtual CursorShape get_cursor_shape() const;
 	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
 
 	void set_mouse_mode(MouseMode p_mode);
@@ -257,6 +280,10 @@ public:
 	virtual void set_window_position(const Point2 &p_position);
 	virtual Size2 get_window_size() const;
 	virtual Size2 get_real_window_size() const;
+	virtual Size2 get_max_window_size() const;
+	virtual Size2 get_min_window_size() const;
+	virtual void set_min_window_size(const Size2 p_size);
+	virtual void set_max_window_size(const Size2 p_size);
 	virtual void set_window_size(const Size2 p_size);
 	virtual void set_window_fullscreen(bool p_enabled);
 	virtual bool is_window_fullscreen() const;
@@ -268,6 +295,7 @@ public:
 	virtual bool is_window_maximized() const;
 	virtual void set_window_always_on_top(bool p_enabled);
 	virtual bool is_window_always_on_top() const;
+	virtual bool is_window_focused() const;
 	virtual void request_attention();
 
 	virtual void set_borderless_window(bool p_borderless);
@@ -291,10 +319,6 @@ public:
 
 	virtual void _set_use_vsync(bool p_enable);
 	//virtual bool is_vsync_enabled() const;
-
-	virtual OS::PowerState get_power_state();
-	virtual int get_power_seconds_left();
-	virtual int get_power_percent_left();
 
 	virtual bool _check_internal_feature_support(const String &p_feature);
 

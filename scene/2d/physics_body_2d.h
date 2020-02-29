@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -87,13 +87,6 @@ protected:
 	static void _bind_methods();
 
 public:
-#ifndef DISABLE_DEPRECATED
-	void set_friction(real_t p_friction);
-	real_t get_friction() const;
-
-	void set_bounce(real_t p_bounce);
-	real_t get_bounce() const;
-#endif
 	void set_physics_material_override(const Ref<PhysicsMaterial> &p_physics_material_override);
 	Ref<PhysicsMaterial> get_physics_material_override() const;
 
@@ -157,8 +150,8 @@ private:
 		bool operator<(const ShapePair &p_sp) const {
 			if (body_shape == p_sp.body_shape)
 				return local_shape < p_sp.local_shape;
-			else
-				return body_shape < p_sp.body_shape;
+
+			return body_shape < p_sp.body_shape;
 		}
 
 		ShapePair() {}
@@ -210,14 +203,6 @@ public:
 
 	void set_weight(real_t p_weight);
 	real_t get_weight() const;
-
-#ifndef DISABLE_DEPRECATED
-	void set_friction(real_t p_friction);
-	real_t get_friction() const;
-
-	void set_bounce(real_t p_bounce);
-	real_t get_bounce() const;
-#endif
 
 	void set_physics_material_override(const Ref<PhysicsMaterial> &p_physics_material_override);
 	Ref<PhysicsMaterial> get_physics_material_override() const;
@@ -306,6 +291,7 @@ public:
 private:
 	float margin;
 
+	Vector2 floor_normal;
 	Vector2 floor_velocity;
 	RID on_floor_body;
 	bool on_floor;
@@ -332,18 +318,19 @@ protected:
 public:
 	bool move_and_collide(const Vector2 &p_motion, bool p_infinite_inertia, Collision &r_collision, bool p_exclude_raycast_shapes = true, bool p_test_only = false);
 
-	bool test_move(const Transform2D &p_from, const Vector2 &p_motion, bool p_infinite_inertia);
+	bool test_move(const Transform2D &p_from, const Vector2 &p_motion, bool p_infinite_inertia = true);
 
 	bool separate_raycast_shapes(bool p_infinite_inertia, Collision &r_collision);
 
 	void set_safe_margin(float p_margin);
 	float get_safe_margin() const;
 
-	Vector2 move_and_slide(const Vector2 &p_linear_velocity, const Vector2 &p_floor_direction = Vector2(0, 0), bool p_infinite_inertia = true, bool p_stop_on_slope = false, int p_max_slides = 4, float p_floor_max_angle = Math::deg2rad((float)45));
-	Vector2 move_and_slide_with_snap(const Vector2 &p_linear_velocity, const Vector2 &p_snap, const Vector2 &p_floor_direction = Vector2(0, 0), bool p_infinite_inertia = true, bool p_stop_on_slope = false, int p_max_slides = 4, float p_floor_max_angle = Math::deg2rad((float)45));
+	Vector2 move_and_slide(const Vector2 &p_linear_velocity, const Vector2 &p_up_direction = Vector2(0, 0), bool p_stop_on_slope = false, int p_max_slides = 4, float p_floor_max_angle = Math::deg2rad((float)45), bool p_infinite_inertia = true);
+	Vector2 move_and_slide_with_snap(const Vector2 &p_linear_velocity, const Vector2 &p_snap, const Vector2 &p_up_direction = Vector2(0, 0), bool p_stop_on_slope = false, int p_max_slides = 4, float p_floor_max_angle = Math::deg2rad((float)45), bool p_infinite_inertia = true);
 	bool is_on_floor() const;
 	bool is_on_wall() const;
 	bool is_on_ceiling() const;
+	Vector2 get_floor_normal() const;
 	Vector2 get_floor_velocity() const;
 
 	int get_slide_count() const;

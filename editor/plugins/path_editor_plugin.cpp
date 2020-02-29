@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -95,6 +95,7 @@ void PathSpatialGizmo::set_handle(int p_idx, Camera *p_camera, const Point2 &p_p
 	Vector3 ray_from = p_camera->project_ray_origin(p_point);
 	Vector3 ray_dir = p_camera->project_ray_normal(p_point);
 
+	// Setting curve point positions
 	if (p_idx < c->get_point_count()) {
 
 		Plane p(gt.xform(original), p_camera->get_transform().basis.get_axis(2));
@@ -126,6 +127,7 @@ void PathSpatialGizmo::set_handle(int p_idx, Camera *p_camera, const Point2 &p_p
 
 	Vector3 inters;
 
+	// Setting curve in/out positions
 	if (p.intersects_ray(ray_from, ray_dir, &inters)) {
 
 		if (!PathEditorPlugin::singleton->is_handle_clicked()) {
@@ -135,9 +137,13 @@ void PathSpatialGizmo::set_handle(int p_idx, Camera *p_camera, const Point2 &p_p
 		}
 
 		Vector3 local = gi.xform(inters) - base;
+		if (SpatialEditor::get_singleton()->is_snap_enabled()) {
+			float snap = SpatialEditor::get_singleton()->get_translate_snap();
+			local.snap(Vector3(snap, snap, snap));
+		}
+
 		if (t == 0) {
 			c->set_point_in(idx, local);
-
 			if (PathEditorPlugin::singleton->mirror_angle_enabled())
 				c->set_point_out(idx, PathEditorPlugin::singleton->mirror_length_enabled() ? -local : (-local.normalized() * orig_out_length));
 		} else {
@@ -215,22 +221,22 @@ void PathSpatialGizmo::redraw() {
 
 	clear();
 
-	Ref<SpatialMaterial> path_material = gizmo_plugin->get_material("path_material", this);
-	Ref<SpatialMaterial> path_thin_material = gizmo_plugin->get_material("path_thin_material", this);
-	Ref<SpatialMaterial> handles_material = gizmo_plugin->get_material("handles");
+	Ref<StandardMaterial3D> path_material = gizmo_plugin->get_material("path_material", this);
+	Ref<StandardMaterial3D> path_thin_material = gizmo_plugin->get_material("path_thin_material", this);
+	Ref<StandardMaterial3D> handles_material = gizmo_plugin->get_material("handles");
 
 	Ref<Curve3D> c = path->get_curve();
 	if (c.is_null())
 		return;
 
-	PoolVector<Vector3> v3a = c->tessellate();
-	//PoolVector<Vector3> v3a=c->get_baked_points();
+	Vector<Vector3> v3a = c->tessellate();
+	//Vector<Vector3> v3a=c->get_baked_points();
 
 	int v3s = v3a.size();
 	if (v3s == 0)
 		return;
 	Vector<Vector3> v3p;
-	PoolVector<Vector3>::Read r = v3a.read();
+	const Vector3 *r = v3a.ptr();
 
 	// BUG: the following won't work when v3s, avoid drawing as a temporary workaround.
 	for (int i = 0; i < v3s - 1; i++) {
@@ -309,7 +315,7 @@ bool PathEditorPlugin::forward_spatial_gui_input(Camera *p_camera, const Ref<Inp
 
 		if (mb->is_pressed() && mb->get_button_index() == BUTTON_LEFT && (curve_create->is_pressed() || (curve_edit->is_pressed() && mb->get_control()))) {
 			//click into curve, break it down
-			PoolVector<Vector3> v3a = c->tessellate();
+			Vector<Vector3> v3a = c->tessellate();
 			int idx = 0;
 			int rc = v3a.size();
 			int closest_seg = -1;
@@ -317,7 +323,7 @@ bool PathEditorPlugin::forward_spatial_gui_input(Camera *p_camera, const Ref<Inp
 			float closest_d = 1e20;
 
 			if (rc >= 2) {
-				PoolVector<Vector3>::Read r = v3a.read();
+				const Vector3 *r = v3a.ptr();
 
 				if (p_camera->unproject_position(gt.xform(c->get_point_position(0))).distance_to(mbpos) < click_dist)
 					return false; //nope, existing
@@ -537,18 +543,14 @@ void PathEditorPlugin::_notification(int p_what) {
 
 	if (p_what == NOTIFICATION_ENTER_TREE) {
 
-		curve_create->connect("pressed", this, "_mode_changed", make_binds(0));
-		curve_edit->connect("pressed", this, "_mode_changed", make_binds(1));
-		curve_del->connect("pressed", this, "_mode_changed", make_binds(2));
-		curve_close->connect("pressed", this, "_close_curve");
+		curve_create->connect("pressed", callable_mp(this, &PathEditorPlugin::_mode_changed), make_binds(0));
+		curve_edit->connect("pressed", callable_mp(this, &PathEditorPlugin::_mode_changed), make_binds(1));
+		curve_del->connect("pressed", callable_mp(this, &PathEditorPlugin::_mode_changed), make_binds(2));
+		curve_close->connect("pressed", callable_mp(this, &PathEditorPlugin::_close_curve));
 	}
 }
 
 void PathEditorPlugin::_bind_methods() {
-
-	ClassDB::bind_method(D_METHOD("_mode_changed"), &PathEditorPlugin::_mode_changed);
-	ClassDB::bind_method(D_METHOD("_close_curve"), &PathEditorPlugin::_close_curve);
-	ClassDB::bind_method(D_METHOD("_handle_option_pressed"), &PathEditorPlugin::_handle_option_pressed);
 }
 
 PathEditorPlugin *PathEditorPlugin::singleton = NULL;
@@ -563,7 +565,7 @@ PathEditorPlugin::PathEditorPlugin(EditorNode *p_node) {
 
 	Ref<PathSpatialGizmoPlugin> gizmo_plugin;
 	gizmo_plugin.instance();
-	SpatialEditor::get_singleton()->register_gizmo_plugin(gizmo_plugin);
+	SpatialEditor::get_singleton()->add_gizmo_plugin(gizmo_plugin);
 
 	sep = memnew(VSeparator);
 	sep->hide();
@@ -608,7 +610,7 @@ PathEditorPlugin::PathEditorPlugin(EditorNode *p_node) {
 	menu->set_item_checked(HANDLE_OPTION_ANGLE, mirror_handle_angle);
 	menu->add_check_item(TTR("Mirror Handle Lengths"));
 	menu->set_item_checked(HANDLE_OPTION_LENGTH, mirror_handle_length);
-	menu->connect("id_pressed", this, "_handle_option_pressed");
+	menu->connect("id_pressed", callable_mp(this, &PathEditorPlugin::_handle_option_pressed));
 
 	curve_edit->set_pressed(true);
 	/*
@@ -638,11 +640,14 @@ String PathSpatialGizmoPlugin::get_name() const {
 	return "Path";
 }
 
+int PathSpatialGizmoPlugin::get_priority() const {
+	return -1;
+}
+
 PathSpatialGizmoPlugin::PathSpatialGizmoPlugin() {
 
 	Color path_color = EDITOR_DEF("editors/3d_gizmos/gizmo_colors/path", Color(0.5, 0.5, 1.0, 0.8));
 	create_material("path_material", path_color);
-	path_color.a = 0.4;
-	create_material("path_thin_material", path_color);
+	create_material("path_thin_material", Color(0.5, 0.5, 0.5));
 	create_handle_material("handles");
 }

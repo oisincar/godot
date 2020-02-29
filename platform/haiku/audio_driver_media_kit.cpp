@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,11 +39,11 @@ int32_t *AudioDriverMediaKit::samples_in = NULL;
 Error AudioDriverMediaKit::init() {
 	active = false;
 
-	mix_rate = 44100;
+	mix_rate = GLOBAL_DEF_RST("audio/mix_rate", DEFAULT_MIX_RATE);
 	speaker_mode = SPEAKER_MODE_STEREO;
 	channels = 2;
 
-	int latency = GLOBAL_DEF_RST("audio/output_latency", 25);
+	int latency = GLOBAL_DEF_RST("audio/output_latency", DEFAULT_OUTPUT_LATENCY);
 	buffer_size = next_power_of_2(latency * mix_rate / 1000);
 	samples_in = memnew_arr(int32_t, buffer_size * channels);
 
@@ -67,7 +67,6 @@ Error AudioDriverMediaKit::init() {
 		ERR_FAIL_COND_V(player == NULL, ERR_CANT_OPEN);
 	}
 
-	mutex = Mutex::create();
 	player->Start();
 
 	return OK;
@@ -108,14 +107,14 @@ void AudioDriverMediaKit::lock() {
 	if (!mutex)
 		return;
 
-	mutex->lock();
+	mutex.lock();
 }
 
 void AudioDriverMediaKit::unlock() {
 	if (!mutex)
 		return;
 
-	mutex->unlock();
+	mutex.unlock();
 }
 
 void AudioDriverMediaKit::finish() {
@@ -124,15 +123,9 @@ void AudioDriverMediaKit::finish() {
 	if (samples_in) {
 		memdelete_arr(samples_in);
 	};
-
-	if (mutex) {
-		memdelete(mutex);
-		mutex = NULL;
-	}
 }
 
 AudioDriverMediaKit::AudioDriverMediaKit() {
-	mutex = NULL;
 	player = NULL;
 }
 

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,10 +28,11 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#include "java_class_wrapper.h"
+#include "api/java_class_wrapper.h"
+#include "string_android.h"
 #include "thread_jandroid.h"
 
-bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error, Variant &ret) {
+bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error, Variant &ret) {
 
 	Map<StringName, List<MethodInfo> >::Element *M = methods.find(p_method);
 	if (!M)
@@ -43,20 +44,20 @@ bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method,
 	for (List<MethodInfo>::Element *E = M->get().front(); E; E = E->next()) {
 
 		if (!p_instance && !E->get()._static) {
-			r_error.error = Variant::CallError::CALL_ERROR_INSTANCE_IS_NULL;
+			r_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
 			continue;
 		}
 
 		int pc = E->get().param_types.size();
 		if (pc > p_argcount) {
 
-			r_error.error = Variant::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS;
+			r_error.error = Callable::CallError::CALL_ERROR_TOO_FEW_ARGUMENTS;
 			r_error.argument = pc;
 			continue;
 		}
 		if (pc < p_argcount) {
 
-			r_error.error = Variant::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS;
+			r_error.error = Callable::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS;
 			r_error.argument = pc;
 			continue;
 		}
@@ -96,7 +97,7 @@ bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method,
 				case ARG_TYPE_DOUBLE: {
 
 					if (!p_args[i]->is_num())
-						arg_expected = Variant::REAL;
+						arg_expected = Variant::FLOAT;
 
 				} break;
 				case ARG_TYPE_STRING: {
@@ -140,7 +141,7 @@ bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method,
 			}
 
 			if (arg_expected != Variant::NIL) {
-				r_error.error = Variant::CallError::CALL_ERROR_INVALID_ARGUMENT;
+				r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 				r_error.argument = i;
 				r_error.expected = arg_expected;
 				valid = false;
@@ -157,7 +158,7 @@ bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method,
 	if (!method)
 		return true; //no version convinces
 
-	r_error.error = Variant::CallError::CALL_OK;
+	r_error.error = Callable::CallError::CALL_OK;
 
 	jvalue *argv = NULL;
 
@@ -404,7 +405,7 @@ bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method,
 		}
 	}
 
-	r_error.error = Variant::CallError::CALL_OK;
+	r_error.error = Callable::CallError::CALL_OK;
 	bool success = true;
 
 	switch (method->return_type) {
@@ -500,7 +501,7 @@ bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method,
 
 				if (!_convert_object_to_variant(env, obj, ret, method->return_type)) {
 					ret = Variant();
-					r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
+					r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 					success = false;
 				}
 				env->DeleteLocalRef(obj);
@@ -516,7 +517,7 @@ bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method,
 	return success;
 }
 
-Variant JavaClass::call(const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error) {
+Variant JavaClass::call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
 
 	Variant ret;
 	bool found = _call_method(NULL, p_method, p_args, p_argcount, r_error, ret);
@@ -532,7 +533,7 @@ JavaClass::JavaClass() {
 
 /////////////////////
 
-Variant JavaObject::call(const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error) {
+Variant JavaObject::call(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
 
 	return Variant();
 }
@@ -545,15 +546,10 @@ JavaObject::~JavaObject() {
 
 ////////////////////
 
-void JavaClassWrapper::_bind_methods() {
-
-	ClassDB::bind_method(D_METHOD("wrap", "name"), &JavaClassWrapper::wrap);
-}
-
 bool JavaClassWrapper::_get_type_sig(JNIEnv *env, jobject obj, uint32_t &sig, String &strsig) {
 
 	jstring name2 = (jstring)env->CallObjectMethod(obj, Class_getName);
-	String str_type = env->GetStringUTFChars(name2, NULL);
+	String str_type = jstring_to_string(name2, env);
 	env->DeleteLocalRef(name2);
 	uint32_t t = 0;
 
@@ -697,7 +693,7 @@ bool JavaClass::_convert_object_to_variant(JNIEnv *env, jobject obj, Variant &va
 		} break;
 		case ARG_TYPE_STRING: {
 
-			var = String::utf8(env->GetStringUTFChars((jstring)obj, NULL));
+			var = jstring_to_string((jstring)obj, env);
 			return true;
 		} break;
 		case ARG_TYPE_CLASS: {
@@ -1030,7 +1026,7 @@ bool JavaClass::_convert_object_to_variant(JNIEnv *env, jobject obj, Variant &va
 				if (!o)
 					ret.push_back(Variant());
 				else {
-					String val = String::utf8(env->GetStringUTFChars((jstring)o, NULL));
+					String val = jstring_to_string((jstring)o, env);
 					ret.push_back(val);
 				}
 				env->DeleteLocalRef(o);
@@ -1075,7 +1071,7 @@ Ref<JavaClass> JavaClassWrapper::wrap(const String &p_class) {
 		ERR_CONTINUE(!obj);
 
 		jstring name = (jstring)env->CallObjectMethod(obj, getName);
-		String str_method = env->GetStringUTFChars(name, NULL);
+		String str_method = jstring_to_string(name, env);
 		env->DeleteLocalRef(name);
 
 		Vector<String> params;
@@ -1204,7 +1200,7 @@ Ref<JavaClass> JavaClassWrapper::wrap(const String &p_class) {
 		ERR_CONTINUE(!obj);
 
 		jstring name = (jstring)env->CallObjectMethod(obj, Field_getName);
-		String str_field = env->GetStringUTFChars(name, NULL);
+		String str_field = jstring_to_string(name, env);
 		env->DeleteLocalRef(name);
 		int mods = env->CallIntMethod(obj, Field_getModifiers);
 		if ((mods & 0x8) && (mods & 0x10) && (mods & 0x1)) { //static final public!

@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -91,7 +91,6 @@ void BoxContainer::_resort() {
 	int stretch_diff = stretch_max - stretch_min;
 	if (stretch_diff < 0) {
 		//avoid negative stretch space
-		stretch_max = stretch_min;
 		stretch_diff = 0;
 	}
 
@@ -255,6 +254,10 @@ void BoxContainer::_notification(int p_what) {
 
 			_resort();
 		} break;
+		case NOTIFICATION_THEME_CHANGED: {
+
+			minimum_size_changed();
+		} break;
 	}
 }
 
@@ -286,8 +289,6 @@ BoxContainer::BoxContainer(bool p_vertical) {
 
 	vertical = p_vertical;
 	align = ALIGN_BEGIN;
-	//set_ignore_mouse(true);
-	set_mouse_filter(MOUSE_FILTER_PASS);
 }
 
 void BoxContainer::_bind_methods() {

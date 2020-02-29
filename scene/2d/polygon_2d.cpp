@@ -5,8 +5,8 @@
 /*                           GODOT ENGINE                                */
 /*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2018 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2018 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2020 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2020 Godot Engine contributors (cf. AUTHORS.md).   */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -33,6 +33,7 @@
 #include "core/math/geometry.h"
 #include "skeleton_2d.h"
 
+#ifdef TOOLS_ENABLED
 Dictionary Polygon2D::_edit_get_state() const {
 	Dictionary state = Node2D::_edit_get_state();
 	state["offset"] = offset;
@@ -60,7 +61,7 @@ bool Polygon2D::_edit_use_pivot() const {
 Rect2 Polygon2D::_edit_get_rect() const {
 	if (rect_cache_dirty) {
 		int l = polygon.size();
-		PoolVector<Vector2>::Read r = polygon.read();
+		const Vector2 *r = polygon.ptr();
 		item_rect = Rect2();
 		for (int i = 0; i < l; i++) {
 			Vector2 pos = r[i] + offset;
@@ -76,12 +77,21 @@ Rect2 Polygon2D::_edit_get_rect() const {
 }
 
 bool Polygon2D::_edit_use_rect() const {
-	return true;
+	return polygon.size() > 0;
 }
 
 bool Polygon2D::_edit_is_selected_on_click(const Point2 &p_point, double p_tolerance) const {
 
-	return Geometry::is_point_in_polygon(p_point - get_offset(), Variant(polygon));
+	Vector<Vector2> polygon2d = Variant(polygon);
+	if (internal_vertices > 0) {
+		polygon2d.resize(polygon2d.size() - internal_vertices);
+	}
+	return Geometry::is_point_in_polygon(p_point - get_offset(), polygon2d);
+}
+#endif
+
+void Polygon2D::_skeleton_bone_setup_changed() {
+	update();
 }
 
 void Polygon2D::_notification(int p_what) {
@@ -98,22 +108,47 @@ void Polygon2D::_notification(int p_what) {
 				skeleton_node = Object::cast_to<Skeleton2D>(get_node(skeleton));
 			}
 
-			if (skeleton_node)
+			ObjectID new_skeleton_id;
+
+			if (skeleton_node) {
 				VS::get_singleton()->canvas_item_attach_skeleton(get_canvas_item(), skeleton_node->get_skeleton());
-			else
+				new_skeleton_id = skeleton_node->get_instance_id();
+			} else {
 				VS::get_singleton()->canvas_item_attach_skeleton(get_canvas_item(), RID());
+			}
+
+			if (new_skeleton_id != current_skeleton_id) {
+				Object *old_skeleton = ObjectDB::get_instance(current_skeleton_id);
+				if (old_skeleton) {
+					old_skeleton->disconnect("bone_setup_changed", callable_mp(this, &Polygon2D::_skeleton_bone_setup_changed));
+				}
+
+				if (skeleton_node) {
+					skeleton_node->connect("bone_setup_changed", callable_mp(this, &Polygon2D::_skeleton_bone_setup_changed));
+				}
+
+				current_skeleton_id = new_skeleton_id;
+			}
 
 			Vector<Vector2> points;
 			Vector<Vector2> uvs;
 			Vector<int> bones;
 			Vector<float> weights;
 
-			points.resize(polygon.size());
+			int len = polygon.size();
+			if ((invert || polygons.size() == 0) && internal_vertices > 0) {
+				//if no polygons are around, internal vertices must not be drawn, else let them be
+				len -= internal_vertices;
+			}
 
-			int len = points.size();
+			if (len <= 0) {
+				return;
+			}
+			points.resize(len);
+
 			{
 
-				PoolVector<Vector2>::Read polyr = polygon.read();
+				const Vector2 *polyr = polygon.ptr();
 				for (int i = 0; i < len; i++) {
 					points.write[i] = polyr[i] + offset;
 				}
@@ -177,11 +212,12 @@ void Polygon2D::_notification(int p_what) {
 				Transform2D texmat(tex_rot, tex_ofs);
 				texmat.scale(tex_scale);
 				Size2 tex_size = texture->get_size();
-				uvs.resize(points.size());
+
+				uvs.resize(len);
 
 				if (points.size() == uv.size()) {
 
-					PoolVector<Vector2>::Read uvr = uv.read();
+					const Vector2 *uvr = uv.ptr();
 
 					for (int i = 0; i < len; i++) {
 						uvs.write[i] = texmat.xform(uvr[i]) / tex_size;
@@ -194,9 +230,9 @@ void Polygon2D::_notification(int p_what) {
 				}
 			}
 
-			if (!invert && bone_weights.size()) {
+			if (skeleton_node && !invert && bone_weights.size()) {
 				//a skeleton is set! fill indices and weights
-				int vc = points.size();
+				int vc = len;
 				bones.resize(vc * 4);
 				weights.resize(vc * 4);
 
@@ -221,7 +257,7 @@ void Polygon2D::_notification(int p_what) {
 					}
 
 					int bone_index = bone->get_index_in_skeleton();
-					PoolVector<float>::Read r = bone_weights[i].weights.read();
+					const float *r = bone_weights[i].weights.ptr();
 					for (int j = 0; j < vc; j++) {
 						if (r[j] == 0.0)
 							continue; //weight is unpainted, skip
@@ -258,131 +294,101 @@ void Polygon2D::_notification(int p_what) {
 			}
 
 			Vector<Color> colors;
-			int color_len = vertex_colors.size();
-			colors.resize(len);
-			{
-				PoolVector<Color>::Read color_r = vertex_colors.read();
-				for (int i = 0; i < color_len && i < len; i++) {
+			if (vertex_colors.size() == points.size()) {
+				colors.resize(len);
+				const Color *color_r = vertex_colors.ptr();
+				for (int i = 0; i < len; i++) {
 					colors.write[i] = color_r[i];
 				}
-				for (int i = color_len; i < len; i++) {
-					colors.write[i] = color;
-				}
+			} else {
+				colors.push_back(color);
 			}
 
-			//			Vector<int> indices = Geometry::triangulate_polygon(points);
-			//			VS::get_singleton()->canvas_item_add_triangle_array(get_canvas_item(), indices, points, colors, uvs, texture.is_valid() ? texture->get_rid() : RID());
-
-			if (invert || splits.size() == 0) {
+			if (invert || polygons.size() == 0) {
 				Vector<int> indices = Geometry::triangulate_polygon(points);
-				VS::get_singleton()->canvas_item_add_triangle_array(get_canvas_item(), indices, points, colors, uvs, bones, weights, texture.is_valid() ? texture->get_rid() : RID());
+				if (indices.size()) {
+					VS::get_singleton()->canvas_item_add_triangle_array(get_canvas_item(), indices, points, colors, uvs, bones, weights, texture.is_valid() ? texture->get_rid() : RID(), -1, normal_map.is_valid() ? normal_map->get_rid() : RID(), specular_map.is_valid() ? specular_map->get_rid() : RID(), Color(specular_color.r, specular_color.g, specular_color.b, shininess));
+				}
 			} else {
-				//use splits
-				Vector<int> loop;
-				int sc = splits.size();
-				PoolVector<int>::Read r = splits.read();
-				int last = points.size();
+				//draw individual polygons
+				Vector<int> total_indices;
+				for (int i = 0; i < polygons.size(); i++) {
+					Vector<int> src_indices = polygons[i];
+					int ic = src_indices.size();
+					if (ic < 3)
+						continue;
+					const int *r = src_indices.ptr();
 
-				Vector<Vector<int> > loops;
+					Vector<Vector2> tmp_points;
+					tmp_points.resize(ic);
 
-				for (int i = 0; i < last; i++) {
-
-					int split;
-					int min_end = -1;
-
-					do {
-
-						loop.push_back(i);
-
-						split = -1;
-						int end = -1;
-
-						for (int j = 0; j < sc; j += 2) {
-							if (r[j + 1] >= last)
-								continue; //no longer valid
-							if (min_end != -1 && r[j + 1] >= min_end)
-								continue;
-							if (r[j] == i) {
-								if (split == -1 || r[j + 1] > end) {
-									split = r[j];
-									end = r[j + 1];
-								}
-							}
-						}
-
-						if (split != -1) {
-							for (int j = end; j < last; j++) {
-								loop.push_back(j);
-							}
-							loops.push_back(loop);
-							last = end + 1;
-							loop.clear();
-							min_end = end; //avoid this split from repeating
-						}
-
-					} while (split != -1);
-				}
-
-				if (loop.size()) {
-					loops.push_back(loop);
-				}
-
-				Vector<int> indices;
-
-				for (int i = 0; i < loops.size(); i++) {
-					Vector<int> loop = loops[i];
-					Vector<Vector2> vertices;
-					vertices.resize(loop.size());
-					for (int j = 0; j < vertices.size(); j++) {
-						vertices.write[j] = points[loop[j]];
+					for (int j = 0; j < ic; j++) {
+						int idx = r[j];
+						ERR_CONTINUE(idx < 0 || idx >= points.size());
+						tmp_points.write[j] = points[r[j]];
 					}
-					Vector<int> sub_indices = Geometry::triangulate_polygon(vertices);
-					int from = indices.size();
-					indices.resize(from + sub_indices.size());
-					for (int j = 0; j < sub_indices.size(); j++) {
-						indices.write[from + j] = loop[sub_indices[j]];
+					Vector<int> indices = Geometry::triangulate_polygon(tmp_points);
+					int ic2 = indices.size();
+					const int *r2 = indices.ptr();
+
+					int bic = total_indices.size();
+					total_indices.resize(bic + ic2);
+					int *w2 = total_indices.ptrw();
+
+					for (int j = 0; j < ic2; j++) {
+						w2[j + bic] = r[r2[j]];
 					}
 				}
 
-				VS::get_singleton()->canvas_item_add_triangle_array(get_canvas_item(), indices, points, colors, uvs, bones, weights, texture.is_valid() ? texture->get_rid() : RID());
+				if (total_indices.size()) {
+					VS::get_singleton()->canvas_item_add_triangle_array(get_canvas_item(), total_indices, points, colors, uvs, bones, weights, texture.is_valid() ? texture->get_rid() : RID());
+				}
 			}
 
 		} break;
 	}
 }
 
-void Polygon2D::set_polygon(const PoolVector<Vector2> &p_polygon) {
+void Polygon2D::set_polygon(const Vector<Vector2> &p_polygon) {
 	polygon = p_polygon;
 	rect_cache_dirty = true;
 	update();
 }
 
-PoolVector<Vector2> Polygon2D::get_polygon() const {
+Vector<Vector2> Polygon2D::get_polygon() const {
 
 	return polygon;
 }
 
-void Polygon2D::set_uv(const PoolVector<Vector2> &p_uv) {
+void Polygon2D::set_internal_vertex_count(int p_count) {
+
+	internal_vertices = p_count;
+}
+
+int Polygon2D::get_internal_vertex_count() const {
+	return internal_vertices;
+}
+
+void Polygon2D::set_uv(const Vector<Vector2> &p_uv) {
 
 	uv = p_uv;
 	update();
 }
 
-PoolVector<Vector2> Polygon2D::get_uv() const {
+Vector<Vector2> Polygon2D::get_uv() const {
 
 	return uv;
 }
 
-void Polygon2D::set_splits(const PoolVector<int> &p_splits) {
+void Polygon2D::set_polygons(const Array &p_polygons) {
 
-	ERR_FAIL_COND(p_splits.size() & 1); //splits should be multiple of 2
-	splits = p_splits;
+	polygons = p_polygons;
 	update();
 }
 
-PoolVector<int> Polygon2D::get_splits() const {
+Array Polygon2D::get_polygons() const {
 
-	return splits;
+	return polygons;
 }
 
 void Polygon2D::set_color(const Color &p_color) {
@@ -395,17 +401,17 @@ Color Polygon2D::get_color() const {
 	return color;
 }
 
-void Polygon2D::set_vertex_colors(const PoolVector<Color> &p_colors) {
+void Polygon2D::set_vertex_colors(const Vector<Color> &p_colors) {
 
 	vertex_colors = p_colors;
 	update();
 }
-PoolVector<Color> Polygon2D::get_vertex_colors() const {
+Vector<Color> Polygon2D::get_vertex_colors() const {
 
 	return vertex_colors;
 }
 
-void Polygon2D::set_texture(const Ref<Texture> &p_texture) {
+void Polygon2D::set_texture(const Ref<Texture2D> &p_texture) {
 
 	texture = p_texture;
 
@@ -419,9 +425,45 @@ void Polygon2D::set_texture(const Ref<Texture> &p_texture) {
 	}*/
 	update();
 }
-Ref<Texture> Polygon2D::get_texture() const {
+Ref<Texture2D> Polygon2D::get_texture() const {
 
 	return texture;
+}
+
+void Polygon2D::set_normal_map(const Ref<Texture2D> &p_normal_map) {
+	normal_map = p_normal_map;
+	update();
+}
+
+Ref<Texture2D> Polygon2D::get_normal_map() const {
+	return normal_map;
+}
+
+void Polygon2D::set_specular_map(const Ref<Texture2D> &p_specular_map) {
+	specular_map = p_specular_map;
+	update();
+}
+
+Ref<Texture2D> Polygon2D::get_specular_map() const {
+	return specular_map;
+}
+
+void Polygon2D::set_specular_color(const Color &p_specular_color) {
+	specular_color = p_specular_color;
+	update();
+}
+
+Color Polygon2D::get_specular_color() const {
+	return specular_color;
+}
+
+void Polygon2D::set_shininess(float p_shininess) {
+	shininess = CLAMP(p_shininess, 0.0, 1.0);
+	update();
+}
+
+float Polygon2D::get_shininess() const {
+	return shininess;
 }
 
 void Polygon2D::set_texture_offset(const Vector2 &p_offset) {
@@ -506,7 +548,7 @@ Vector2 Polygon2D::get_offset() const {
 	return offset;
 }
 
-void Polygon2D::add_bone(const NodePath &p_path, const PoolVector<float> &p_weights) {
+void Polygon2D::add_bone(const NodePath &p_path, const Vector<float> &p_weights) {
 
 	Bone bone;
 	bone.path = p_path;
@@ -520,9 +562,9 @@ NodePath Polygon2D::get_bone_path(int p_index) const {
 	ERR_FAIL_INDEX_V(p_index, bone_weights.size(), NodePath());
 	return bone_weights[p_index].path;
 }
-PoolVector<float> Polygon2D::get_bone_weights(int p_index) const {
+Vector<float> Polygon2D::get_bone_weights(int p_index) const {
 
-	ERR_FAIL_INDEX_V(p_index, bone_weights.size(), PoolVector<float>());
+	ERR_FAIL_INDEX_V(p_index, bone_weights.size(), Vector<float>());
 	return bone_weights[p_index].weights;
 }
 void Polygon2D::erase_bone(int p_idx) {
@@ -535,7 +577,7 @@ void Polygon2D::clear_bones() {
 	bone_weights.clear();
 }
 
-void Polygon2D::set_bone_weights(int p_index, const PoolVector<float> &p_weights) {
+void Polygon2D::set_bone_weights(int p_index, const Vector<float> &p_weights) {
 	ERR_FAIL_INDEX(p_index, bone_weights.size());
 	bone_weights.write[p_index].weights = p_weights;
 	update();
@@ -585,14 +627,26 @@ void Polygon2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_color", "color"), &Polygon2D::set_color);
 	ClassDB::bind_method(D_METHOD("get_color"), &Polygon2D::get_color);
 
-	ClassDB::bind_method(D_METHOD("set_splits", "splits"), &Polygon2D::set_splits);
-	ClassDB::bind_method(D_METHOD("get_splits"), &Polygon2D::get_splits);
+	ClassDB::bind_method(D_METHOD("set_polygons", "polygons"), &Polygon2D::set_polygons);
+	ClassDB::bind_method(D_METHOD("get_polygons"), &Polygon2D::get_polygons);
 
 	ClassDB::bind_method(D_METHOD("set_vertex_colors", "vertex_colors"), &Polygon2D::set_vertex_colors);
 	ClassDB::bind_method(D_METHOD("get_vertex_colors"), &Polygon2D::get_vertex_colors);
 
 	ClassDB::bind_method(D_METHOD("set_texture", "texture"), &Polygon2D::set_texture);
 	ClassDB::bind_method(D_METHOD("get_texture"), &Polygon2D::get_texture);
+
+	ClassDB::bind_method(D_METHOD("set_normal_map", "normal_map"), &Polygon2D::set_normal_map);
+	ClassDB::bind_method(D_METHOD("get_normal_map"), &Polygon2D::get_normal_map);
+
+	ClassDB::bind_method(D_METHOD("set_specular_map", "specular_map"), &Polygon2D::set_specular_map);
+	ClassDB::bind_method(D_METHOD("get_specular_map"), &Polygon2D::get_specular_map);
+
+	ClassDB::bind_method(D_METHOD("set_specular_color", "specular_color"), &Polygon2D::set_specular_color);
+	ClassDB::bind_method(D_METHOD("get_specular_color"), &Polygon2D::get_specular_color);
+
+	ClassDB::bind_method(D_METHOD("set_shininess", "shininess"), &Polygon2D::set_shininess);
+	ClassDB::bind_method(D_METHOD("get_shininess"), &Polygon2D::get_shininess);
 
 	ClassDB::bind_method(D_METHOD("set_texture_offset", "texture_offset"), &Polygon2D::set_texture_offset);
 	ClassDB::bind_method(D_METHOD("get_texture_offset"), &Polygon2D::get_texture_offset);
@@ -630,31 +684,41 @@ void Polygon2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_skeleton", "skeleton"), &Polygon2D::set_skeleton);
 	ClassDB::bind_method(D_METHOD("get_skeleton"), &Polygon2D::get_skeleton);
 
+	ClassDB::bind_method(D_METHOD("set_internal_vertex_count", "internal_vertex_count"), &Polygon2D::set_internal_vertex_count);
+	ClassDB::bind_method(D_METHOD("get_internal_vertex_count"), &Polygon2D::get_internal_vertex_count);
+
 	ClassDB::bind_method(D_METHOD("_set_bones", "bones"), &Polygon2D::_set_bones);
 	ClassDB::bind_method(D_METHOD("_get_bones"), &Polygon2D::_get_bones);
 
-	ADD_PROPERTY(PropertyInfo(Variant::POOL_VECTOR2_ARRAY, "polygon"), "set_polygon", "get_polygon");
-	ADD_PROPERTY(PropertyInfo(Variant::POOL_VECTOR2_ARRAY, "uv"), "set_uv", "get_uv");
-	ADD_PROPERTY(PropertyInfo(Variant::POOL_INT_ARRAY, "splits"), "set_splits", "get_splits");
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "color"), "set_color", "get_color");
-	ADD_PROPERTY(PropertyInfo(Variant::POOL_COLOR_ARRAY, "vertex_colors"), "set_vertex_colors", "get_vertex_colors");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "antialiased"), "set_antialiased", "get_antialiased");
-	ADD_GROUP("Texture", "");
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture"), "set_texture", "get_texture");
-	ADD_GROUP("Texture", "texture_");
+	ADD_GROUP("Texture2D", "");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D"), "set_texture", "get_texture");
+	ADD_GROUP("Texture2D", "texture_");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "texture_offset"), "set_texture_offset", "get_texture_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "texture_scale"), "set_texture_scale", "get_texture_scale");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "texture_rotation_degrees", PROPERTY_HINT_RANGE, "-1080,1080,0.1,or_lesser,or_greater"), "set_texture_rotation_degrees", "get_texture_rotation_degrees");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "texture_rotation", PROPERTY_HINT_NONE, "", 0), "set_texture_rotation", "get_texture_rotation");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "texture_rotation_degrees", PROPERTY_HINT_RANGE, "-360,360,0.1,or_lesser,or_greater"), "set_texture_rotation_degrees", "get_texture_rotation_degrees");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "texture_rotation", PROPERTY_HINT_NONE, "", 0), "set_texture_rotation", "get_texture_rotation");
+	ADD_GROUP("Lighting", "");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "normal_map", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D"), "set_normal_map", "get_normal_map");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "specular_map", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D"), "set_specular_map", "get_specular_map");
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "specular_color", PROPERTY_HINT_COLOR_NO_ALPHA), "set_specular_color", "get_specular_color");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "shininess", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_shininess", "get_shininess");
 	ADD_GROUP("Skeleton", "");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "skeleton", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Skeleton2D"), "set_skeleton", "get_skeleton");
 
 	ADD_GROUP("Invert", "invert_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "invert_enable"), "set_invert", "get_invert");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "invert_border", PROPERTY_HINT_RANGE, "0.1,16384,0.1"), "set_invert_border", "get_invert_border");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "invert_border", PROPERTY_HINT_RANGE, "0.1,16384,0.1"), "set_invert_border", "get_invert_border");
 
+	ADD_GROUP("Data", "");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_VECTOR2_ARRAY, "polygon"), "set_polygon", "get_polygon");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_VECTOR2_ARRAY, "uv"), "set_uv", "get_uv");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_COLOR_ARRAY, "vertex_colors"), "set_vertex_colors", "get_vertex_colors");
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "polygons"), "set_polygons", "get_polygons");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "bones", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "_set_bones", "_get_bones");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "internal_vertex_count", PROPERTY_HINT_RANGE, "0,1000"), "set_internal_vertex_count", "get_internal_vertex_count");
 }
 
 Polygon2D::Polygon2D() {
@@ -667,4 +731,8 @@ Polygon2D::Polygon2D() {
 	tex_scale = Vector2(1, 1);
 	color = Color(1, 1, 1);
 	rect_cache_dirty = true;
+	internal_vertices = 0;
+
+	specular_color = Color(1, 1, 1, 1);
+	shininess = 1.0;
 }
