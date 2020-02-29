@@ -318,6 +318,9 @@ Dictionary PhysicsDirectSpaceState::_cast_motion(const Ref<PhysicsShapeQueryPara
 	if (!res)
 		return r;
 
+	r["closest_safe"] = closest_safe;
+	r["closest_unsafe"] = closest_unsafe;
+
 	r["point"] = sri.point;
 	r["normal"] = sri.normal;
 	r["rid"] = sri.rid;
